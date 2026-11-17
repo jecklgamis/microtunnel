@@ -5,6 +5,7 @@
 protocol: http
 
 load:
+  max_workers: 4000
   stages:
     - { duration: 5s,  workers: 400,  rate: 1000 }
     - { duration: 15s, workers: 400,  rate: 1000 }
@@ -19,7 +20,7 @@ load:
 
 http:
   timeout: 5s
-  max_idle_conns: 2000
+  max_idle_conns: 4000
   targets:
     - method: POST
       url: http://10.9.0.1:38080/sink
