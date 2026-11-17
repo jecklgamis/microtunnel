@@ -63,3 +63,63 @@ func Debugf(format string, args ...any) {
 	}
 	logf("[DEBUG]", format, args...)
 }
+
+// Limiter rate-limits log lines that unauthenticated network input can trigger
+// (junk datagrams, forged handshakes), so a flood cannot fill the disk or the
+// journal. Each key emits at most one line per interval; the next line that
+// gets through reports how many were suppressed. Keys must come from a small
+// fixed set (never from packet contents). A nil *Limiter logs everything.
+type Limiter struct {
+	every time.Duration
+	mu    sync.Mutex
+	state map[string]*limitState
+}
+
+type limitState struct {
+	last       time.Time
+	suppressed int
+}
+
+// NewLimiter returns a Limiter allowing one line per key every interval.
+func NewLimiter(every time.Duration) *Limiter {
+	return &Limiter{every: every, state: make(map[string]*limitState)}
+}
+
+func (l *Limiter) allow(key string) (ok bool, suppressed int) {
+	t := now()
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	s := l.state[key]
+	if s == nil {
+		l.state[key] = &limitState{last: t}
+		return true, 0
+	}
+	if t.Sub(s.last) < l.every {
+		s.suppressed++
+		return false, 0
+	}
+	suppressed, s.suppressed, s.last = s.suppressed, 0, t
+	return true, suppressed
+}
+
+func (l *Limiter) logf(level, key, format string, args ...any) {
+	if l == nil {
+		logf(level, format, args...)
+		return
+	}
+	ok, n := l.allow(key)
+	if !ok {
+		return
+	}
+	msg := fmt.Sprintf(format, args...)
+	if n > 0 {
+		msg += fmt.Sprintf(" (%d similar suppressed)", n)
+	}
+	logf(level, "%s", msg)
+}
+
+// Warnf logs at WARN level, rate-limited per key.
+func (l *Limiter) Warnf(key, format string, args ...any) { l.logf("[WARN] ", key, format, args...) }
+
+// Infof logs at INFO level, rate-limited per key.
+func (l *Limiter) Infof(key, format string, args ...any) { l.logf("[INFO] ", key, format, args...) }

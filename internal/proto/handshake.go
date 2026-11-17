@@ -198,6 +198,14 @@ func parseMessage(msg []byte, psk *[KeyLen]byte) (ephPub, encStatic []byte, err 
 	return body[:PubKeyLen], body[PubKeyLen:], nil
 }
 
+// CheckHandshake reports whether msg is a well-formed handshake message: exact
+// size, magic and, when psk is set, a valid HMAC. It does no Diffie-Hellman, so
+// callers use it to discard junk and forgeries before taking any lock.
+func CheckHandshake(msg []byte, psk *[KeyLen]byte) bool {
+	_, _, err := parseMessage(msg, psk)
+	return err == nil
+}
+
 // ClientState carries the initiator's ephemeral secrets between sending the
 // handshake initiation and processing the response.
 type ClientState struct {

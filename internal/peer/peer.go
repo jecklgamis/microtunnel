@@ -23,6 +23,13 @@ import (
 	"github.com/jecklgamis/microtunnel/internal/proto"
 )
 
+// maxPacketsPerKey bounds how many packets one session key may encrypt. IVs are
+// random 96-bit values, so the chance of a repeated IV (fatal for AES-GCM) is
+// negligible below about 2^32 messages under one key; the peer that dialed
+// rekeys every few minutes, long before this, but a stalled rekey must not let
+// a key run on forever.
+const maxPacketsPerKey = 1 << 32
+
 // Device is the packet interface to the TUN device: each Read returns one raw
 // IP packet, each Write injects one. Close must unblock pending Reads.
 type Device io.ReadWriteCloser
@@ -47,6 +54,10 @@ type Peer struct {
 	precomp *ecdh.PrivateKey
 
 	workers int
+
+	// lim rate-limits log lines that unauthenticated packets can trigger.
+	lim     *logx.Limiter
+	hsLimit handshakeLimiter
 
 	// Tunnel settings applied at startup, kept to flag unrouted allowed_ips on
 	// a live reload; warned remembers what was already reported.
@@ -80,6 +91,7 @@ func New(cfg *config.Config, static *ecdh.PrivateKey, dev Device, conn *net.UDPC
 		tunnelAddr:    cfg.TunnelAddress,
 		tunnelRoutes:  cfg.TunnelRoutes,
 		warned:        map[string]bool{},
+		lim:           logx.NewLimiter(time.Second),
 		keepalive:     time.Duration(cfg.KeepaliveInterval) * time.Second,
 		rekeyAfter:    time.Duration(cfg.RekeyAfter) * time.Second,
 		reconnect:     time.Duration(cfg.ReconnectInterval) * time.Second,
@@ -238,6 +250,17 @@ func (p *Peer) handleUDP(src netip.AddrPort, pkt []byte, w *workerBufs) {
 	now := time.Now()
 	if len(pkt) == p.hsSize && len(pkt) >= proto.HeaderSize &&
 		[proto.HeaderSize]byte(pkt[:proto.HeaderSize]) == proto.Header {
+		// Cheap checks first, outside any lock: a bad HMAC costs one hash and
+		// consumes no rate-limit tokens (so spoofing a peer's address cannot
+		// exhaust its budget). Only then is the expensive path rate-limited.
+		if !proto.CheckHandshake(pkt, p.psk) {
+			p.lim.Warnf("hs-invalid", "Invalid handshake from %s (bad pre-shared key authentication) — dropping", src)
+			return
+		}
+		if !p.hsLimit.allow(src.Addr(), now) {
+			p.lim.Warnf("hs-ratelimit", "Handshake rate limit exceeded for %s — dropping", src.Addr())
+			return
+		}
 		p.handleHandshake(src, pkt, now)
 		return
 	}
@@ -251,6 +274,12 @@ func (p *Peer) handleUDP(src netip.AddrPort, pkt []byte, w *workerBufs) {
 func (p *Peer) forward(s *session, payload []byte, w *workerBufs) {
 	s.mu.Lock()
 	seq := s.sendSeq
+	if seq >= maxPacketsPerKey {
+		addr := s.addr
+		s.mu.Unlock()
+		p.lim.Warnf("key-exhausted", "Session key for %s has sent %d packets; waiting for a rekey before sending more", addr, uint64(maxPacketsPerKey))
+		return
+	}
 	s.sendSeq++
 	aead := s.aead
 	dest := s.addr
@@ -288,7 +317,7 @@ func (p *Peer) handleData(src netip.AddrPort, pkt []byte, now time.Time, w *work
 	s := t.findByAddr(src)
 	if s == nil {
 		t.mu.RUnlock()
-		logx.Warnf("Packet from unknown peer %s — dropping", src)
+		p.lim.Warnf("unknown-peer", "Packet from unknown peer %s — dropping", src)
 		return
 	}
 
@@ -331,15 +360,15 @@ func (p *Peer) handleData(src netip.AddrPort, pkt []byte, now time.Time, w *work
 	switch {
 	case !decOK:
 		t.mu.RUnlock()
-		logx.Warnf("Decrypt failed from %s — dropping", src)
+		p.lim.Warnf("decrypt", "Decrypt failed from %s — dropping", src)
 		return
 	case !headerOK:
 		t.mu.RUnlock()
-		logx.Warnf("Bad header from %s — dropping", src)
+		p.lim.Warnf("bad-header", "Bad header from %s — dropping", src)
 		return
 	case replay:
 		t.mu.RUnlock()
-		logx.Warnf("Replay from %s (seq=%d) — dropping", src, seq)
+		p.lim.Warnf("replay", "Replay from %s (seq=%d) — dropping", src, seq)
 		return
 	}
 
@@ -354,12 +383,12 @@ func (p *Peer) handleData(src netip.AddrPort, pkt []byte, now time.Time, w *work
 	srcIP, ok := ipv4Src(payload)
 	if !ok {
 		t.mu.RUnlock()
-		logx.Warnf("Non-IPv4 packet from %s — dropping", src)
+		p.lim.Warnf("non-ipv4", "Non-IPv4 packet from %s — dropping", src)
 		return
 	}
 	if !s.checkAllowedSrc(srcIP) {
 		t.mu.RUnlock()
-		logx.Warnf("Source IP %s not in AllowedIPs for %s — dropping", u32Addr(srcIP), src)
+		p.lim.Warnf("src-not-allowed", "Source IP %s not in AllowedIPs for %s — dropping", u32Addr(srcIP), src)
 		return
 	}
 	// Relay shortcut: if dst belongs to another peer, forward directly without
@@ -438,10 +467,10 @@ func (p *Peer) handleHandshake(src netip.AddrPort, pkt []byte, now time.Time) {
 	}
 
 	if ex := t.findByAddr(src); ex != nil && now.Sub(ex.lastHandshake) < p.hsCooldown {
-		logx.Warnf("Handshake cooldown for %s — ignoring", src)
+		p.lim.Warnf("cooldown-addr", "Handshake cooldown for %s — ignoring", src)
 		return
 	}
-	logx.Infof("Inbound handshake from %s", src)
+	p.lim.Infof("inbound-hs", "Inbound handshake from %s", src)
 
 	eph := p.precomp
 	if eph == nil {
@@ -453,7 +482,7 @@ func (p *Peer) handleHandshake(src netip.AddrPort, pkt []byte, now time.Time) {
 	}
 	resp, peerPub, key, err := proto.ServerRespond(pkt, p.psk, p.static, eph)
 	if err != nil {
-		logx.Warnf("Inbound handshake from %s rejected: %v", src, err)
+		p.lim.Warnf("hs-rejected", "Inbound handshake from %s rejected: %v", src, err)
 		return
 	}
 	if yielding != nil {
@@ -472,11 +501,11 @@ func (p *Peer) handleHandshake(src netip.AddrPort, pkt []byte, now time.Time) {
 
 	cfg := p.findPeerConfig(peerPub)
 	if cfg == nil {
-		logx.Warnf("Unknown peer public key: %s — rejecting", proto.BytesToHex(peerPub[:]))
+		p.lim.Warnf("unknown-key", "Unknown peer public key: %s — rejecting", proto.BytesToHex(peerPub[:]))
 		return
 	}
 	if bp := t.findByPub(peerPub); bp != nil && now.Sub(bp.lastHandshake) < p.hsCooldown {
-		logx.Warnf("Handshake cooldown for peer key — ignoring")
+		p.lim.Warnf("cooldown-key", "Handshake cooldown for peer key — ignoring")
 		return
 	}
 	s := t.alloc(peerPub, src)
