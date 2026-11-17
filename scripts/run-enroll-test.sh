@@ -88,7 +88,7 @@ TOKEN_OUT=$(mt enroll token create -tokens /data/tokens -name dave -ttl 10m)
 TOKEN=$(echo "$TOKEN_OUT" | grep -o 'mt1\.[0-9a-f]\{16\}\.[A-Za-z0-9_-]*' | head -1)
 [ -n "$TOKEN" ] || fail "no token printed"
 T0=$SECONDS
-docker run --rm --network "$NET" -v "$WORK:/data" --entrypoint "$BIN" "$IMAGE" \
+docker run --rm --network "$NET" --user "$(id -u):$(id -g)" -v "$WORK:/data" --entrypoint "$BIN" "$IMAGE" \
   join "http://$P-relay:8443" -token "$TOKEN" -dir /data/dave -allow-http
 [ -f "$WORK/dave/dave.key" ] && [ -f "$WORK/dave/dave.yaml" ] || fail "join did not write dave's files"
 grep -q "tunnel_address: 10.9.0.3/24" "$WORK/dave/dave.yaml" || fail "dave did not get 10.9.0.3"
@@ -105,7 +105,7 @@ step "live state, and a spent token"
 LIST=$(mt peer list -socket "$SOCK")
 echo "$LIST"
 [ "$(echo "$LIST" | grep -c connected)" = 2 ] || fail "peer list should show both peers connected"
-if docker run --rm --network "$NET" -v "$WORK:/data" --entrypoint "$BIN" "$IMAGE" \
+if docker run --rm --network "$NET" --user "$(id -u):$(id -g)" -v "$WORK:/data" --entrypoint "$BIN" "$IMAGE" \
   join "http://$P-relay:8443" -token "$TOKEN" -dir /data/dave2 -allow-http >/dev/null 2>&1; then
   fail "a spent token was accepted twice"
 fi
