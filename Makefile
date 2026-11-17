@@ -34,7 +34,8 @@ GOBUILD  = CGO_ENABLED=0 GOOS=linux $(GO) build -trimpath -ldflags "$(LDFLAGS)"
         image integration-test dynamic-test enroll-test init-test \
         deb rpm pkg clean FORCE
 
-all: build
+# Vet and test (native, no Docker or root), then build for this machine.
+all: vet test build
 
 # Builds ./microtunnel for the machine you are on (current OS and architecture).
 # Override for a cross-build, e.g. `GOOS=linux GOARCH=arm64 make build`.
