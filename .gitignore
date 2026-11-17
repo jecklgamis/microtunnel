@@ -5,3 +5,6 @@ build/
 *.test
 !Dockerfile.test
 *.out
+/report.html
+/report.json
+/results.jsonl

@@ -1,0 +1,32 @@
+# Load test through the tunnel using resonate (https://github.com/jecklgamis/resonate).
+#
+# Path: resonate -> peer-1 Envoy HTTP proxy (localhost:15052)
+#       -> peer-1 tunnel -> relay -> peer-2 tunnel -> peer-2 nginx (10.9.0.3:80)
+#
+# Prereq: the dockerized relay + peers are running
+#   ./scripts/run-relay-in-docker.sh; ./scripts/run-peer-1-in-docker.sh; ./scripts/run-peer-2-in-docker.sh
+# Run (from the repo root):
+#   ./perf-tests/run-perf-tests.sh
+# Validate without sending traffic:
+#   ./perf-tests/run-perf-tests.sh -- --dry-run
+protocol: http
+
+load:
+  duration: 30s
+  rate: 500        # requests/second
+  workers: 50
+
+http:
+  timeout: 5s
+  targets:
+    - method: GET
+      url: http://localhost:15052/
+      headers:
+        User-Agent: resonate-load-gen
+
+# Fail (non-zero exit) if the tunnel path is unhealthy.
+assertions:
+  - metric: success_rate
+    min: "0.99"
+  - metric: latency_p95
+    max: 200ms
