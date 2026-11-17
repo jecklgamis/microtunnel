@@ -6,6 +6,8 @@
 //	microtunnel [-c <config.yaml>]          run the tunnel
 //	microtunnel peer add|remove|list ...    manage the relay's peers_dir
 //	microtunnel keygen <name>               create a key pair and print the public key
+//	microtunnel enroll serve|token ...      self-service enrollment service (next to a relay)
+//	microtunnel join <url> -token <t>       enroll this machine with such a service
 package main
 
 import (
@@ -17,6 +19,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/jecklgamis/microtunnel/internal/adminapi"
 	"github.com/jecklgamis/microtunnel/internal/config"
 	"github.com/jecklgamis/microtunnel/internal/logx"
 	"github.com/jecklgamis/microtunnel/internal/peer"
@@ -44,12 +47,16 @@ func run() error {
 			return runPeerCmd(os.Args[2:], os.Stdout, os.Stderr)
 		case "keygen":
 			return runKeygen(os.Args[2:], os.Stdout, os.Stderr)
+		case "enroll":
+			return runEnroll(os.Args[2:], os.Stdout, os.Stderr)
+		case "join":
+			return runJoin(os.Args[2:], os.Stdout, os.Stderr)
 		}
 	}
 	configPath := flag.String("c", "peer.yaml", "YAML config file")
 	showVersion := flag.Bool("version", false, "print version and exit")
 	flag.Usage = func() {
-		fmt.Fprintf(flag.CommandLine.Output(), "Usage: %s [-c <config.yaml>]\n       %s peer add|remove|list ...  (see `%s peer help`)\n", os.Args[0], os.Args[0], os.Args[0])
+		fmt.Fprintf(flag.CommandLine.Output(), "Usage: %s [-c <config.yaml>]\n       %s peer add|remove|list ...  (see `%s peer help`, `enroll help`, `join -h`)\n", os.Args[0], os.Args[0], os.Args[0])
 		flag.PrintDefaults()
 	}
 	flag.Parse()
@@ -144,6 +151,21 @@ func run() error {
 			}
 		}
 	}()
+
+	if cfg.AdminSocket != "" {
+		ln, err := adminapi.Listen(cfg.AdminSocket)
+		if err != nil {
+			_ = conn.Close()
+			_ = dev.Close()
+			return err
+		}
+		logx.Infof("Admin API listening on %s (mode 0600)", cfg.AdminSocket)
+		go func() {
+			if err := adminapi.New(p, *configPath, version).Serve(ctx, ln); err != nil {
+				logx.Errorf("admin API: %v", err)
+			}
+		}()
+	}
 
 	// SIGHUP, or a change in peers_dir, re-reads the peer list without
 	// restarting or disturbing the other sessions.

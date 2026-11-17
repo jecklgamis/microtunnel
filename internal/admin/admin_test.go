@@ -1,6 +1,8 @@
 package admin
 
 import (
+	"encoding/json"
+	"net/netip"
 	"os"
 	"path/filepath"
 	"strings"
@@ -201,7 +203,7 @@ func TestAddGenerateWritesUsableBundle(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if proto.PubBytes(key) != res.PublicKey {
+	if Key(proto.PubBytes(key)) != res.PublicKey {
 		t.Fatal("registered public key does not match the generated private key")
 	}
 	if _, err := proto.LoadPublicKey(res.CrtFile); err != nil {
@@ -273,5 +275,82 @@ func TestRemoveAndList(t *testing.T) {
 	}
 	if entries, _ = List(e.cfgPath); len(entries) != 1 {
 		t.Fatalf("entries=%+v", entries)
+	}
+}
+
+func TestRegisterDefaultsEndpointAndRoundTripsJSON(t *testing.T) {
+	e := newRelayEnv(t, "public_endpoint: relay.example.com:5040\n")
+	reg, err := Register(e.cfgPath, RegisterOptions{Name: "laptop", PublicKeyHex: randPub(t)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reg.Endpoint != "relay.example.com:5040" || reg.IP.String() != "10.9.0.2" || reg.Subnet.String() != "10.9.0.0/24" {
+		t.Fatalf("reg = %+v", reg)
+	}
+	if reg.RelayPublicKey.String() != e.relayPub || reg.PreSharedKey != "s3cret" {
+		t.Fatalf("relay identity not carried: %+v", reg)
+	}
+	raw, err := json.Marshal(reg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{`"ip":"10.9.0.2"`, `"subnet":"10.9.0.0/24"`, `"relay_public_key":"` + e.relayPub + `"`} {
+		if !strings.Contains(string(raw), want) {
+			t.Errorf("json missing %s: %s", want, raw)
+		}
+	}
+	if strings.Contains(string(raw), "peers.d") {
+		t.Errorf("the server-side file path must not be serialised: %s", raw)
+	}
+	var back Registration
+	if err := json.Unmarshal(raw, &back); err != nil || back.IP != reg.IP || back.PublicKey != reg.PublicKey {
+		t.Fatalf("round trip: %+v %v", back, err)
+	}
+	if err := json.Unmarshal([]byte(`{"public_key":"zz"}`), &back); err == nil {
+		t.Fatal("bad hex must not unmarshal")
+	}
+
+	if _, err := Register(e.cfgPath, RegisterOptions{Name: "x", PublicKeyHex: randPub(t), Endpoint: "no-port"}); err == nil {
+		t.Fatal("a malformed endpoint override must be rejected")
+	}
+	if _, err := os.Stat(filepath.Join(e.peersDir, "x.yaml")); err == nil {
+		t.Fatal("rejected registration left a file behind")
+	}
+}
+
+func TestSpokeConfigVariants(t *testing.T) {
+	reg := &Registration{Name: "mac", IP: netip.MustParseAddr("10.9.0.7"), Subnet: netip.MustParsePrefix("10.9.0.0/24"),
+		Endpoint: "r:5040"}
+	out := SpokeConfig(reg, SpokeOptions{KeyFile: "/etc/mt/mac.key", Interface: "utun"})
+	for _, want := range []string{"interface: utun\n", "private_key_file: /etc/mt/mac.key", "tunnel_address: 10.9.0.7/24", "endpoint: r:5040"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("missing %q:\n%s", want, out)
+		}
+	}
+	if strings.Contains(out, "pre_shared_key") {
+		t.Errorf("no PSK was set, none should be emitted:\n%s", out)
+	}
+	if _, err := config.Parse([]byte(out)); err != nil {
+		t.Fatalf("generated config does not parse: %v\n%s", err, out)
+	}
+}
+
+func TestSpokeConfigQuotesHostileValues(t *testing.T) {
+	relay, _ := proto.GenerateKey()
+	rp := proto.PubBytes(relay)
+	for _, psk := range []string{"plain", "has: colon", "has # hash", `quo"te`, "multi\nline: x\npeers: []", "  spaced  ", "'single'"} {
+		reg := &Registration{Name: "n", IP: netip.MustParseAddr("10.9.0.2"), Subnet: netip.MustParsePrefix("10.9.0.0/24"),
+			Endpoint: "r.example.com:5040", PreSharedKey: psk, RelayPublicKey: Key(rp)}
+		out := SpokeConfig(reg, SpokeOptions{KeyFile: "n.key"})
+		cfg, err := config.Parse([]byte(out))
+		if err != nil {
+			t.Fatalf("psk %q produced an invalid config: %v\n%s", psk, err, out)
+		}
+		if cfg.PreSharedKey != psk {
+			t.Fatalf("psk %q came back as %q\n%s", psk, cfg.PreSharedKey, out)
+		}
+		if len(cfg.Peers) != 1 {
+			t.Fatalf("psk %q injected or dropped peers (%d)\n%s", psk, len(cfg.Peers), out)
+		}
 	}
 }

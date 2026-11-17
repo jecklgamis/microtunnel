@@ -436,3 +436,27 @@ func TestPeerName(t *testing.T) {
 		}
 	}
 }
+
+func TestAdminSocketAndPublicEndpoint(t *testing.T) {
+	dir := t.TempDir()
+	path := writeConfig(t, dir, minimalYAML+"admin_socket: run/admin.sock\npublic_endpoint: relay.example.com:5040\n")
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.AdminSocket != filepath.Join(dir, "run/admin.sock") {
+		t.Fatalf("relative admin_socket not resolved against the config dir: %q", cfg.AdminSocket)
+	}
+	if cfg.PublicEndpoint != "relay.example.com:5040" {
+		t.Fatalf("public_endpoint=%q", cfg.PublicEndpoint)
+	}
+	path = writeConfig(t, dir, minimalYAML+"admin_socket: /run/mt.sock\n")
+	if cfg, err = Load(path); err != nil || cfg.AdminSocket != "/run/mt.sock" {
+		t.Fatalf("absolute admin_socket changed: %v %v", cfg, err)
+	}
+	for _, bad := range []string{"nohostport", "host:0", "host:99999", ":5040"} {
+		if _, err := Parse([]byte(minimalYAML + "public_endpoint: " + bad + "\n")); err == nil {
+			t.Errorf("public_endpoint %q should be rejected", bad)
+		}
+	}
+}

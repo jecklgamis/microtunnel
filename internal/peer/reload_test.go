@@ -423,3 +423,56 @@ func TestWatchPeersPicksUpDirectoryChanges(t *testing.T) {
 		return strings.Count(logs.String(), "Reloading peers (requested)") > n
 	})
 }
+
+func TestSessionsReportsCountersAndResetsOnReassignment(t *testing.T) {
+	e := newHSEnv(t, "")
+	if len(e.relay.Sessions()) != 0 {
+		t.Fatal("no sessions expected before any handshake")
+	}
+	key, ok, env := strangerHandshake(t, e.relay, e.relayKey, e.clientKey)
+	if !ok {
+		t.Fatal("setup handshake failed")
+	}
+	dev := e.relay.dev.(*fakeDev)
+	pkt := ipv4("10.9.0.2", "10.9.0.1", []byte("hello"))
+	wire := wirePacket(t, key, 0, pkt)
+	e.relay.handleUDP(env.clientAddr, wire, new(workerBufs))
+	dev.expect(t, time.Second)
+
+	// One packet toward the peer (TUN -> UDP).
+	e.relay.handleTUN(ipv4("10.9.0.1", "10.9.0.2", []byte("reply")), new(workerBufs))
+
+	got := e.relay.Sessions()
+	if len(got) != 1 {
+		t.Fatalf("sessions=%d", len(got))
+	}
+	s := got[0]
+	if s.PublicKey != pubOf(e.clientKey) || s.Addr != env.clientAddr || s.Outbound {
+		t.Fatalf("session = %+v", s)
+	}
+	if s.RxPackets != 1 || s.RxBytes != uint64(len(wire)) {
+		t.Fatalf("rx = %d pkts / %d bytes, want 1 / %d", s.RxPackets, s.RxBytes, len(wire))
+	}
+	if s.TxPackets != 1 || s.TxBytes == 0 {
+		t.Fatalf("tx = %d pkts / %d bytes", s.TxPackets, s.TxBytes)
+	}
+	if s.LastSeen.IsZero() || s.LastHandshake.IsZero() {
+		t.Fatalf("timestamps missing: %+v", s)
+	}
+
+	// A replayed packet must not inflate the counters.
+	e.relay.handleUDP(env.clientAddr, wire, new(workerBufs))
+	if again := e.relay.Sessions()[0]; again.RxPackets != 1 {
+		t.Fatalf("replay counted: rx=%d", again.RxPackets)
+	}
+
+	// A different peer taking over the slot starts from zero.
+	other := mustKey(t)
+	e.relay.tbl.mu.Lock()
+	sl := e.relay.tbl.findByPub(pubOf(e.clientKey))
+	_ = e.relay.tbl.sessionInit(sl, env.clientAddr, pubOf(other), randKey(7), nil, false, time.Now())
+	e.relay.tbl.mu.Unlock()
+	if c := e.relay.Sessions()[0]; c.RxPackets != 0 || c.TxPackets != 0 {
+		t.Fatalf("counters not reset on reassignment: %+v", c)
+	}
+}

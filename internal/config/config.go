@@ -86,6 +86,15 @@ type Config struct {
 	// against the config file's directory by Load.
 	PeersDir string
 	Peers    []Peer
+
+	// AdminSocket, when set, is the path of a unix socket on which the relay
+	// serves its admin API (peer management and live state). The socket is
+	// created with mode 0600, so only the owning user (and root) can use it.
+	// A relative path is resolved against the config file's directory by Load.
+	AdminSocket string
+	// PublicEndpoint is this node's public host:port as peers should dial it.
+	// It is handed to newly registered peers (the admin API and `peer add`).
+	PublicEndpoint string
 }
 
 type rawPeer struct {
@@ -112,6 +121,8 @@ type rawConfig struct {
 	TunnelAddress     string    `yaml:"tunnel_address"`
 	TunnelRoutes      []string  `yaml:"tunnel_routes"`
 	PeersDir          string    `yaml:"peers_dir"`
+	AdminSocket       string    `yaml:"admin_socket"`
+	PublicEndpoint    string    `yaml:"public_endpoint"`
 	Peers             []rawPeer `yaml:"peers"`
 }
 
@@ -131,6 +142,9 @@ func Load(path string) (*Config, error) {
 	cfg, err := Parse(data)
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", path, err)
+	}
+	if cfg.AdminSocket != "" && !filepath.IsAbs(cfg.AdminSocket) {
+		cfg.AdminSocket = filepath.Join(filepath.Dir(path), cfg.AdminSocket)
 	}
 	if cfg.PeersDir != "" {
 		if !filepath.IsAbs(cfg.PeersDir) {
@@ -172,6 +186,13 @@ func Parse(data []byte) (*Config, error) {
 		HandshakeCooldown: orDefault(raw.HandshakeCooldown, DefaultHSCooldown),
 		WorkerThreads:     orDefault(raw.WorkerThreads, 0),
 		PeersDir:          raw.PeersDir,
+		AdminSocket:       raw.AdminSocket,
+		PublicEndpoint:    raw.PublicEndpoint,
+	}
+	if cfg.PublicEndpoint != "" {
+		if _, _, err := SplitHostPort(cfg.PublicEndpoint); err != nil {
+			return nil, fmt.Errorf("public_endpoint: %w", err)
+		}
 	}
 	if raw.PrivateKeyFile != nil {
 		cfg.PrivateKeyFile = *raw.PrivateKeyFile
@@ -225,6 +246,20 @@ func Parse(data []byte) (*Config, error) {
 	return cfg, nil
 }
 
+// SplitHostPort parses "host:port" (port 1-65535), as used by `endpoint:` and
+// `public_endpoint:`.
+func SplitHostPort(s string) (host string, port int, err error) {
+	i := strings.LastIndexByte(s, ':')
+	if i <= 0 {
+		return "", 0, fmt.Errorf("invalid endpoint (expected host:port): %s", s)
+	}
+	port, perr := strconv.Atoi(s[i+1:])
+	if perr != nil || port <= 0 || port > 65535 {
+		return "", 0, fmt.Errorf("invalid port in endpoint: %s", s)
+	}
+	return s[:i], port, nil
+}
+
 // checkPeers rejects too many peers and duplicate public keys.
 func checkPeers(peers []Peer) error {
 	if len(peers) > MaxPeers {
@@ -252,17 +287,11 @@ func parsePeer(rp rawPeer) (Peer, error) {
 	copy(p.PublicKey[:], pub)
 
 	if rp.Endpoint != "" {
-		i := strings.LastIndexByte(rp.Endpoint, ':')
-		if i <= 0 {
-			return p, fmt.Errorf("invalid endpoint (expected host:port): %s", rp.Endpoint)
+		host, port, err := SplitHostPort(rp.Endpoint)
+		if err != nil {
+			return p, err
 		}
-		port, err := strconv.Atoi(rp.Endpoint[i+1:])
-		if err != nil || port <= 0 || port > 65535 {
-			return p, fmt.Errorf("invalid port in endpoint: %s", rp.Endpoint)
-		}
-		p.Host = rp.Endpoint[:i]
-		p.Port = port
-		p.hasEndpoint = true
+		p.Host, p.Port, p.hasEndpoint = host, port, true
 	}
 
 	if len(rp.AllowedIPs) > MaxRoutesPerPeer {

@@ -7,10 +7,12 @@ A simple Linux hub-and-spoke layer 3 overlay network using a TUN virtual interfa
 
 Go module `github.com/jecklgamis/microtunnel` (Go 1.26+). Only dependencies: `gopkg.in/yaml.v3`, `golang.org/x/sys`. Crypto is stdlib only.
 
-- `cmd/microtunnel/main.go` — flags (`-c config.yaml`, `-version`), config load, key load, TUN open, UDP bind, signal handling (SIGTERM/SIGINT stop, SIGUSR1 dumps sessions, SIGHUP reloads peers), then `peer.Run` plus `peer.WatchPeers`. `peer.go` implements `microtunnel peer add|remove|list`, `keygen.go` `microtunnel keygen` (subcommands are dispatched on `os.Args[1]` before flag parsing).
+- `cmd/microtunnel/main.go` — flags (`-c config.yaml`, `-version`), config load, key load, TUN open, UDP bind, signal handling (SIGTERM/SIGINT stop, SIGUSR1 dumps sessions, SIGHUP reloads peers), then `peer.Run` plus `peer.WatchPeers`. `peer.go` implements `microtunnel peer add|remove|list`, `keygen.go` `microtunnel keygen`, `enroll.go` (`enroll serve|token`) and `join` (subcommands are dispatched on `os.Args[1]` before flag parsing). `peer add|remove|list` use the relay's admin socket when `-socket` is given or `-c`'s `admin_socket` is reachable, else edit `peers_dir`.
 - `internal/proto` — wire protocol. `proto.go` (constants, hex, AES-256-GCM `Seal`/`Open`, PSK key derivation), `handshake.go` (X25519 handshake with identity hiding: `ClientInit`/`ClientFinish`/`ServerRespond`, PEM key loading), `replay.go` (2048-bit sliding window `ReplayWindow`).
 - `internal/config` — `config.go` (YAML parse + validation + defaults), `cidr.go` (IPv4 `Prefix`), `peersdir.go` (`LoadPeersDir`: one-peer-per-file YAML merged into `Config.Peers` by `Load` — `Parse` alone never touches the filesystem; `PeersDirFingerprint` for change detection).
-- `internal/admin` — logic behind the `peer` CLI: `Add` (validate, allocate lowest free overlay /32, write `<peers_dir>/<name>.yaml` atomically via a dot-prefixed tmp file, optionally generate a key pair and a saved spoke config), `Remove`, `List`. Tested against real temp dirs.
+- `internal/adminapi` — the relay's local management API: JSON over HTTP on a unix socket (`Listen` creates it 0600, replaces stale sockets, refuses live ones/non-sockets). `GET /v1/status`, `GET|POST /v1/peers`, `DELETE /v1/peers/{name}`. Mutations are serialised by a mutex, go through `admin.Register`/`Remove`, then call `Node.ReloadFrom` immediately (a failed reload rolls the registration back). `PeerInfo` merges `admin.List` with `Peer.Sessions()` (live state + counters). `client.go` is the unix-socket client used by the CLI and the enrollment service. Tests use `/tmp` sockets (macOS caps socket paths at ~104 bytes).
+- `internal/enroll` — enrollment service. `tokens.go`: one file per token (`<id>.json` → atomically renamed to `.claimed` then `.used`; only a SHA-256 of the secret is stored; ids are validated as 16 hex chars before touching paths). `server.go`: `POST /v1/enroll` claims the token, registers via the `Registrar` (the admin client), commits; any non-token failure `Release`s the token; all token failures are one uniform 401; per-IP failure limiter. `join.go`: generates the key locally (temp name until the server names the peer), verifies TLS, never follows redirects, refuses plain http without `AllowHTTP`, leaves nothing behind on failure.
+- `internal/admin` — logic behind the `peer` CLI (`Register` + `SpokeConfig` are shared by the CLI, the admin API and enrollment; errors carry a `Kind` the API maps to 400/404/409): `Add` (validate, allocate lowest free overlay /32, write `<peers_dir>/<name>.yaml` atomically via a dot-prefixed tmp file, optionally generate a key pair and a saved spoke config), `Remove`, `List`. Tested against real temp dirs.
 - `internal/peer` — `peer.go` (`Peer`, `New`, `Run`, TUN/UDP worker loops, data + handshake handlers), `table.go` (session table, routing, `sessionInit`), `housekeeping.go` (rekey/expiry/keepalive/DNS), `listen.go` (UDP socket setup), `reload.go` (`Reload`/`ReloadFrom`: live peer-set changes), `watch.go` (`WatchPeers`: polls `peers_dir` every second, applies a change once it is stable for one poll, also reloads on a trigger channel = SIGHUP).
 - `internal/tun` — TUN devices behind `tun.Open(name) (io.ReadWriteCloser, name, error)`: `tun_linux.go` (`/dev/net/tun`, `TUNSETIFF`), `tun_darwin.go` (utun kernel-control socket; the 4-byte AF header is stripped/added in `Read`/`Write`), `tun_other.go` (stub error). `utun.go` holds the platform-neutral, unit-tested utun framing/naming helpers; `configure.go` builds and runs the `ifconfig`/`route` (macOS) or `ip` (Linux) commands for `tunnel_address`/`tunnel_routes` (`Commands` is pure and tested for both OSes).
 - `internal/logx` — timestamped logger.
@@ -63,6 +65,8 @@ handshake_cooldown: 5                # seconds between handshake attempts to sam
 worker_threads: 4                    # optional: packet workers (default: min(4, NumCPU), max 32)
 tunnel_address: 10.9.0.2/24          # optional: program assigns this overlay IP to the TUN itself (required on macOS)
 tunnel_routes: [192.168.50.0/24]     # optional: extra CIDRs routed via the TUN (needs tunnel_address)
+admin_socket: /run/microtunnel/admin.sock   # optional: serve the admin API on this unix socket (0600); relative paths resolve against this file
+public_endpoint: relay.example.com:5040     # optional: host:port handed to newly registered peers
 peers_dir: peers.d                   # optional: dir of one-peer-per-file YAML (*.yaml/*.yml); makes `peers:` optional; relative to this file
 
 peers:
@@ -150,6 +154,7 @@ make test-image         # build golang toolchain image (microtunnel-test:latest)
 make test-using-docker  # run the race-detector suite on Linux via Docker
 make integration-test   # build image, run relay+peer-1+peer-2 with real TUN in Docker, ping+curl
 make dynamic-test       # relay with empty peers_dir; `peer add/remove` while it runs (alice/bob), asserts no relay restart
+make enroll-test        # admin socket + enrollment: `peer add -socket` (carol), token + `join` (dave), removal, spent token
 make image              # build Docker image (microtunnel-peer:latest)
 make run-shell          # open a bash shell in a fresh container
 make run                # run the image with its default entrypoint (microtunnel-peer container)
@@ -197,6 +202,7 @@ make image
 - `scripts/test-tunnel-using-peer-1.sh [target_ip]` — ping + curl from peer-1 (default target: 10.9.0.3)
 - `scripts/test-tunnel-using-peer-2.sh [target_ip]` — ping + curl from peer-2 (default target: 10.9.0.2)
 - `scripts/run-integration-test.sh` — end-to-end test behind `make integration-test`
+- `scripts/run-enroll-test.sh` — end-to-end test behind `make enroll-test` (the admin socket lives at `/tmp/admin.sock` inside the relay container because Docker Desktop for Mac bind mounts cannot chmod sockets)
 - `scripts/run-dynamic-peers-test.sh` — end-to-end test behind `make dynamic-test` (work dir `build/dyn-test`, removed on exit)
 - `scripts/run-perf-test.sh [base_url]` — runs a Gatling load test container against an Envoy HTTP proxy endpoint (defaults to peer-1's `:15052` on the detected host IP)
 - `scripts/create-tag.sh` — creates a git tag; auto-increments the rc number from the latest tag if `VERSION` env var is not set

@@ -215,6 +215,74 @@ Safeguards: a file that fails to parse, or a duplicate public key, makes the who
 
 Verify it end to end with real TUN devices: `make dynamic-test` (relay starts empty, adds alice and bob, alice and bob ping each other through the relay, alice is removed and cut off, and the relay process is shown never to have restarted).
 
+### Admin API (local socket)
+
+Set **`admin_socket`** on the relay and it serves a small JSON API on a unix socket (created with mode `0600`, so only its owner and root can use it). It is the safest way to manage a relay from tools or over SSH, because the relay itself allocates addresses (no race between two admins), applies changes **immediately**, and reports **live state**:
+
+```yaml
+# relay.yaml
+admin_socket: /run/microtunnel/admin.sock   # the directory must exist (the packaged unit creates /run/microtunnel)
+public_endpoint: relay.example.com:5040     # handed to new peers as the address to dial
+```
+
+The same `microtunnel peer ...` commands use it automatically when `-c relay.yaml` names a reachable `admin_socket`, or explicitly with `-socket`:
+
+```bash
+microtunnel peer list -c relay.yaml
+# NAME    ALLOWED IPS   STATE      ADDRESS            LAST SEEN  RX     TX     SOURCE
+# laptop  10.9.0.2/32   connected  198.51.100.7:40000 now        1.2MiB 3.4MiB peers_dir
+# phone   10.9.0.3/32   offline    -                  -          0B     0B     peers_dir
+
+microtunnel peer add laptop -c relay.yaml -generate -key-dir ./laptop   # key made locally; only the public half is sent
+```
+
+**Managing a remote relay:** forward the socket over SSH and point the CLI at it; no extra port is opened and SSH is the authentication:
+
+```bash
+ssh -N -L /tmp/mt.sock:/run/microtunnel/admin.sock relay.example.com &
+microtunnel peer list -socket /tmp/mt.sock
+microtunnel peer add laptop -socket /tmp/mt.sock -public-key <hex>
+```
+
+Endpoints (JSON; for scripts): `GET /v1/status`, `GET /v1/peers`, `POST /v1/peers` (`{"name","public_key","ip","subnet","endpoint"}` → the registration), `DELETE /v1/peers/{name}`; errors are `{"error": "..."}` with 400 / 404 / 409 for bad requests, unknown peers and clashes.
+
+Notes: the socket must live on a local filesystem that supports `chmod` (a host directory bind-mounted into a container on Docker Desktop for Mac does not; use a container-local path). Anyone who can open the socket can add a peer, which means network access, so never expose it, for example by proxying it to a TCP port.
+
+### Enrollment service (self-service join)
+
+For many devices, run the enrollment service next to the relay. An admin creates a **single-use, short-lived join token**; the new machine presents it with its **own public key** and gets back everything it needs. The private key is generated on that machine and never travels.
+
+```bash
+# On the relay host (the service talks to the relay's admin socket):
+microtunnel enroll serve -c relay.yaml -tokens /var/lib/microtunnel/tokens \
+  -tls-cert /etc/microtunnel/enroll.crt -tls-key /etc/microtunnel/enroll.key      # listens on :8443
+
+microtunnel enroll token create -tokens /var/lib/microtunnel/tokens -name laptop -ttl 1h \
+  -url https://enroll.example.com
+#   Join token (shown once; valid until ..., single use):  mt1.3f9a....
+#   On the new machine:  microtunnel join https://enroll.example.com -token mt1.3f9a....
+
+# On the new machine:
+microtunnel join https://enroll.example.com -token mt1.3f9a.... -dir /etc/microtunnel
+#   Enrolled as "laptop" with overlay address 10.9.0.2
+#   -> writes laptop.key (0600), laptop.crt and laptop.yaml; then: sudo microtunnel -c /etc/microtunnel/laptop.yaml
+```
+
+`microtunnel enroll token list|revoke <id>` manage tokens. Properties:
+
+| | |
+|---|---|
+| **Token** | random secret; only its SHA-256 is stored (one file per token, directory mode `0700`); `mt1.<id>.<secret>` |
+| **Single use** | redeeming is one atomic file rename, so concurrent or repeated use can succeed only once. If registering with the relay fails (name taken, relay down) the token is put back, not burned |
+| **Short-lived** | default 1 hour, maximum 7 days; optionally bound to one peer name |
+| **Transport** | HTTPS required (`-tls-cert/-tls-key`); `-insecure-http` exists for use behind a TLS-terminating proxy. `join` verifies the certificate (`-ca-file` for a private CA), refuses plain `http://` without `-allow-http`, and never follows redirects, so the token cannot be sent elsewhere |
+| **Abuse** | all token failures return the same 401 (no oracle); 10 failures a minute per client address, then 429; request bodies are size-limited; the response carries the pre-shared key and is marked `no-store` |
+| **Blast radius** | the service holds no relay keys; it can only call the relay's admin API, and if it is down existing tunnels and the CLI are unaffected |
+
+The pre-shared key is handed to each enrolled machine (as it is today when you copy a config), so protect the tokens and the enrollment endpoint accordingly. `MICROTUNNEL_JOIN_TOKEN` can supply the token to `join` instead of `-token`, keeping it out of shell history.
+
+Verify it all with real TUN devices: `make enroll-test`.
+
 ---
 
 ## Running With Docker
@@ -289,6 +357,7 @@ make check              # gofmt check + go vet (macOS and Linux) + race tests
 make test-using-docker  # run the race-detector suite on Linux in a golang container
 make integration-test   # full test with real TUN devices: relay + 2 peers in Docker, ping + curl
 make dynamic-test       # real-TUN test of `peers_dir` + `microtunnel peer add/remove` against a running relay
+make enroll-test        # real-TUN test of the admin socket + enrollment service (`peer add -socket`, `enroll`, `join`)
 make build              # build ./microtunnel for the machine you're on (current OS and architecture)
 make linux              # static Linux binaries (amd64 + arm64) into build/
 make macos              # macOS binaries (arm64 + amd64) into build/
@@ -300,10 +369,12 @@ Layout:
 
 | Path | Contents |
 |------|----------|
-| `cmd/microtunnel` | `main`: flags, config loading, signal handling, wiring; `peer add/remove/list` and `keygen` subcommands |
+| `cmd/microtunnel` | `main`: flags, config loading, signal handling, wiring; `peer add/remove/list`, `keygen`, `enroll` and `join` subcommands |
 | `internal/proto` | wire protocol: AES-256-GCM data packets, X25519 handshake with identity hiding, session-key derivation, 2048-bit replay window |
 | `internal/config` | YAML config parsing/validation, CIDR parsing, `peers_dir` loading |
 | `internal/admin` | the logic behind `microtunnel peer add/remove/list`: IP allocation, peer files, spoke-config generation |
+| `internal/adminapi` | the relay's unix-socket JSON API and its client |
+| `internal/enroll` | enrollment service: single-use token store, HTTPS server, `join` client |
 | `internal/peer` | session table, AllowedIPs routing, worker goroutines, handshake state machine, housekeeping (rekey/expiry/keepalive), live peer reload (`reload.go`, `watch.go`) |
 | `internal/tun` | TUN devices: Linux `/dev/net/tun`, macOS `utun`; optional interface address/route setup |
 | `internal/logx` | timestamped logger |
@@ -439,7 +510,7 @@ The wire protocol and YAML format are unchanged. The port deliberately tightens 
 - **Simultaneous-rekey tie-break** now works when both sides dial each other. (In C, a peer's initiation arriving from the address we had dialed was classified as a failed *response*, so the "higher public key wins" branch was unreachable there.) A forged packet can no longer cancel a pending handshake.
 - **Unknown peers get no reply:** the responder checks the initiator's identity *before* answering the handshake.
 - **DNS** re-resolution no longer happens while holding the session-table lock.
-- **Dynamic peers** (new): `peers_dir`, hot reload (`SIGHUP` or automatic), and the `peer`/`keygen` subcommands have no C equivalent. Duplicate peer public keys are now rejected.
+- **Dynamic peers** (new): `peers_dir`, hot reload (`SIGHUP` or automatic), the admin socket, the enrollment service and the `peer`/`keygen`/`enroll`/`join` subcommands have no C equivalent. Duplicate peer public keys are now rejected.
 - **Config:** an empty `pre_shared_key`, a peer without `public_key`, and interface names longer than 15 characters are rejected instead of being silently accepted.
 
 ---

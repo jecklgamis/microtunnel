@@ -29,7 +29,7 @@ LDFLAGS = -s -w -X main.version=$(BIN_VERSION)
 GOBUILD  = CGO_ENABLED=0 GOOS=linux $(GO) build -trimpath -ldflags "$(LDFLAGS)"
 
 .PHONY: all build linux macos test test-race vet fmt fmt-check check image run-shell run test-image \
-        test-using-docker integration-test dynamic-test deb rpm clean FORCE
+        test-using-docker integration-test dynamic-test enroll-test deb rpm clean FORCE
 
 all: build
 
@@ -101,6 +101,10 @@ integration-test: image
 # Dynamic peers: relay with an empty peers_dir, `peer add/remove` while it runs.
 dynamic-test: image
 	./scripts/run-dynamic-peers-test.sh
+
+# Admin API + enrollment service: peer add through the socket, `join` with a token.
+enroll-test: image
+	./scripts/run-enroll-test.sh
 
 # --- packages ----------------------------------------------------------------------
 deb: build/$(BINARY)-$(DEB_ARCH)

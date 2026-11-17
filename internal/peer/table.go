@@ -63,6 +63,11 @@ type session struct {
 	lastSent       time.Time
 	sendSeq        uint64
 	replay         proto.ReplayWindow
+
+	// Traffic counters (wire bytes and datagrams, keepalives included) for
+	// this peer since its session slot was assigned; reported by Sessions.
+	txBytes, rxBytes     uint64
+	txPackets, rxPackets uint64
 }
 
 // pendingHS is an outbound handshake that has been sent and is awaiting its
@@ -182,6 +187,13 @@ func (t *table) sessionInit(s *session, addr netip.AddrPort, pub [proto.PubKeyLe
 		return err
 	}
 	wasActive := s.active
+	if s.staticPub != pub {
+		// The slot is being (re)assigned to a different peer: start its
+		// counters from zero. A rekey of the same peer keeps them.
+		s.mu.Lock()
+		s.txBytes, s.rxBytes, s.txPackets, s.rxPackets = 0, 0, 0, 0
+		s.mu.Unlock()
+	}
 	s.active = true
 	s.staticPub = pub
 

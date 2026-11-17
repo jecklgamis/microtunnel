@@ -55,3 +55,5 @@ func runKeygen(args []string, stdout, stderr io.Writer) error {
 	fmt.Fprintf(stdout, "wrote %s (private, keep secret) and %s\npublic key: %s\n", keyPath, crtPath, proto.BytesToHex(pub[:]))
 	return nil
 }
+
+func validPeerName(name string) bool { return admin.ValidName(name) }

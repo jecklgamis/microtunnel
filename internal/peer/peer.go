@@ -261,6 +261,8 @@ func (p *Peer) forward(s *session, payload []byte, w *workerBufs) {
 	}
 	s.mu.Lock()
 	s.lastSent = time.Now()
+	s.txBytes += uint64(len(wire))
+	s.txPackets++
 	s.mu.Unlock()
 }
 
@@ -307,6 +309,8 @@ func (p *Peer) handleData(src netip.AddrPort, pkt []byte, now time.Time, w *work
 		} else {
 			// Only authenticated, non-replayed traffic keeps a session alive.
 			s.lastSeen = now
+			s.rxBytes += uint64(len(pkt))
+			s.rxPackets++
 		}
 	}
 	s.mu.Unlock()

@@ -8,6 +8,10 @@ ExecStart=/usr/bin/microtunnel -c /etc/microtunnel/relay.yaml
 Restart=on-failure
 RestartSec=5
 AmbientCapabilities=CAP_NET_ADMIN
+# /run/microtunnel exists while the service runs: a home for the optional admin socket
+# (admin_socket: /run/microtunnel/admin.sock in relay.yaml). Only root can reach it.
+RuntimeDirectory=microtunnel
+RuntimeDirectoryMode=0750
 
 [Install]
 WantedBy=multi-user.target
