@@ -53,12 +53,12 @@ X25519 key exchange with forward secrecy, AES-256-GCM, identity hiding, optional
 
 ## Requirements
 
-**To run:** Linux with `iproute2` (for the helper script that creates the TUN interface), or macOS 12+ (no extra tools; see below). The binary is a static Go executable — no OpenSSL, libyaml or libc version requirements. `openssl` is only needed by the key-generation scripts.
+**To run:** Linux with `iproute2` (for the helper script that creates the TUN interface), or macOS 12+ (no extra tools; see below). The binary is a static Go executable — no OpenSSL, libyaml or libc version requirements.
 
 **To build:** Go 1.26+ and `make`. Docker is optional (image builds, running the tests on Linux, local end-to-end testing).
 
 ```
-sudo apt install iproute2 make openssl   # plus Go 1.26+ from https://go.dev/dl/
+sudo apt install iproute2 make   # plus Go 1.26+ from https://go.dev/dl/
 ```
 
 ## Running Natively

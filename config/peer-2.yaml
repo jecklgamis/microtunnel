@@ -1,5 +1,5 @@
 # DEMO CONFIG — uses keys/pre_shared_key committed in this repo for local testing only.
-# Regenerate before using on any non-local network: ./scripts/generate-peer-keys.sh
+# Regenerate before using on any non-local network: microtunnel keygen <name>
 interface: microtunnel0
 port: 5040
 private_key_file: /etc/microtunnel/peer-2.key

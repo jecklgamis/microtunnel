@@ -511,7 +511,7 @@ func mustParse(t *testing.T, y string) *Config {
 }
 
 func TestPackagedTemplatesAreSafePlaceholders(t *testing.T) {
-	files, err := filepath.Glob(filepath.Join("..", "..", "packaging", "config", "*.yaml"))
+	files, err := filepath.Glob(filepath.Join("..", "..", "packaging", "examples", "*.yaml"))
 	if err != nil || len(files) != 2 {
 		t.Fatalf("expected the 2 packaged examples (relay, peer), got %v (%v)", files, err)
 	}

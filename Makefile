@@ -128,18 +128,14 @@ deb: build/$(BINARY)-linux-$(DEB_ARCH)
 	mkdir -p $(DEB_ROOT)/etc/microtunnel
 	install -d -m 750 $(DEB_ROOT)/etc/microtunnel/peers.d
 	install -m 755 build/$(BINARY)-linux-$(DEB_ARCH) $(DEB_ROOT)/usr/bin/$(BINARY)
-	install -m 755 scripts/create-tunnel.sh $(DEB_ROOT)/usr/share/microtunnel/microtunnel-create-tunnel.sh
-	install -m 755 scripts/extract-keys-hex.sh $(DEB_ROOT)/usr/bin/microtunnel-extract-keys-hex.sh
-	install -m 755 scripts/extract-pubkey-hex.sh $(DEB_ROOT)/usr/bin/microtunnel-extract-pubkey-hex.sh
-	install -m 755 scripts/generate-peer-keys.sh $(DEB_ROOT)/usr/bin/microtunnel-generate-peer-keys.sh
 	install -m 755 scripts/create-tunnel.sh $(DEB_ROOT)/usr/bin/microtunnel-create-tunnel.sh
-	install -m 644 debian/systemd/microtunnel.service $(DEB_ROOT)/lib/systemd/system/
-	install -m 644 debian/systemd/microtunnel@.service $(DEB_ROOT)/lib/systemd/system/
-	install -m 644 packaging/config/relay.yaml $(DEB_ROOT)/usr/share/microtunnel/examples/relay.yaml
-	install -m 644 packaging/config/peer.yaml $(DEB_ROOT)/usr/share/microtunnel/examples/peer.yaml
-	sed -e "s/^Architecture:.*/Architecture: $(DEB_ARCH)/" -e "s/^Version:.*/Version: $(DEB_VERSION)/" debian/control > $(DEB_ROOT)/DEBIAN/control
-	install -m 755 debian/postinst $(DEB_ROOT)/DEBIAN/postinst
-	install -m 755 debian/prerm $(DEB_ROOT)/DEBIAN/prerm
+	install -m 644 packaging/systemd/microtunnel.service $(DEB_ROOT)/lib/systemd/system/
+	install -m 644 packaging/systemd/microtunnel@.service $(DEB_ROOT)/lib/systemd/system/
+	install -m 644 packaging/examples/relay.yaml $(DEB_ROOT)/usr/share/microtunnel/examples/relay.yaml
+	install -m 644 packaging/examples/peer.yaml $(DEB_ROOT)/usr/share/microtunnel/examples/peer.yaml
+	sed -e "s/^Architecture:.*/Architecture: $(DEB_ARCH)/" -e "s/^Version:.*/Version: $(DEB_VERSION)/" packaging/deb/control > $(DEB_ROOT)/DEBIAN/control
+	install -m 755 packaging/deb/postinst $(DEB_ROOT)/DEBIAN/postinst
+	install -m 755 packaging/deb/prerm $(DEB_ROOT)/DEBIAN/prerm
 	dpkg-deb --build --root-owner-group $(DEB_ROOT) build/$(DEB_PKG).deb
 	@echo "Package built: build/$(DEB_PKG).deb"
 
@@ -151,7 +147,7 @@ rpm: build/$(BINARY)-linux-$(RPM_GOARCH)
 		--define "pkg_version $(RPM_VERSION)" \
 		--define "pkg_release $(RPM_RELEASE)" \
 		--define "bin_path build/$(BINARY)-linux-$(RPM_GOARCH)" \
-		rpm/microtunnel.spec
+		packaging/rpm/microtunnel.spec
 	@echo "Package built: $$(find build/rpm/RPMS -name '*.rpm')"
 
 # macOS installer: a universal (arm64 + amd64) .pkg. Needs macOS (lipo, pkgbuild,
@@ -167,8 +163,8 @@ pkg: macos
 	lipo -create -output $(PKG_ROOT)/usr/local/bin/$(BINARY) build/$(BINARY)-darwin-arm64 build/$(BINARY)-darwin-amd64
 	chmod 755 $(PKG_ROOT)/usr/local/bin/$(BINARY)
 	install -m 755 packaging/macos/uninstall.sh $(PKG_ROOT)/usr/local/share/microtunnel/uninstall.sh
-	install -m 644 packaging/config/relay.yaml $(PKG_ROOT)/usr/local/share/microtunnel/examples/relay.yaml
-	install -m 644 packaging/config/peer.yaml $(PKG_ROOT)/usr/local/share/microtunnel/examples/peer.yaml
+	install -m 644 packaging/examples/relay.yaml $(PKG_ROOT)/usr/local/share/microtunnel/examples/relay.yaml
+	install -m 644 packaging/examples/peer.yaml $(PKG_ROOT)/usr/local/share/microtunnel/examples/peer.yaml
 	install -m 644 packaging/macos/$(PKG_ID).plist $(PKG_ROOT)/Library/LaunchDaemons/$(PKG_ID).plist
 	install -m 644 packaging/macos/newsyslog.conf $(PKG_ROOT)/etc/newsyslog.d/microtunnel.conf
 	pkgbuild --root $(PKG_ROOT) --identifier $(PKG_ID) --version $(VERSION) \

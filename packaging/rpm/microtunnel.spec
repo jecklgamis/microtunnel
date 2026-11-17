@@ -27,24 +27,16 @@ mkdir -p %{buildroot}/etc/microtunnel
 install -d -m 750 %{buildroot}/etc/microtunnel/peers.d
 
 install -m 755 %{_sourcedir}/%{bin_path}                 %{buildroot}/usr/bin/microtunnel
-install -m 755 %{_sourcedir}/scripts/create-tunnel.sh        %{buildroot}/usr/share/microtunnel/microtunnel-create-tunnel.sh
-install -m 755 %{_sourcedir}/scripts/extract-keys-hex.sh    %{buildroot}/usr/bin/microtunnel-extract-keys-hex.sh
-install -m 755 %{_sourcedir}/scripts/extract-pubkey-hex.sh  %{buildroot}/usr/bin/microtunnel-extract-pubkey-hex.sh
-install -m 755 %{_sourcedir}/scripts/generate-peer-keys.sh  %{buildroot}/usr/bin/microtunnel-generate-peer-keys.sh
 install -m 755 %{_sourcedir}/scripts/create-tunnel.sh       %{buildroot}/usr/bin/microtunnel-create-tunnel.sh
-install -m 644 %{_sourcedir}/rpm/systemd/microtunnel.service    %{buildroot}/usr/lib/systemd/system/
-install -m 644 %{_sourcedir}/rpm/systemd/microtunnel@.service   %{buildroot}/usr/lib/systemd/system/
-install -m 644 %{_sourcedir}/packaging/config/relay.yaml  %{buildroot}/usr/share/microtunnel/examples/relay.yaml
-install -m 644 %{_sourcedir}/packaging/config/peer.yaml   %{buildroot}/usr/share/microtunnel/examples/peer.yaml
+install -m 644 %{_sourcedir}/packaging/systemd/microtunnel.service    %{buildroot}/usr/lib/systemd/system/
+install -m 644 %{_sourcedir}/packaging/systemd/microtunnel@.service   %{buildroot}/usr/lib/systemd/system/
+install -m 644 %{_sourcedir}/packaging/examples/relay.yaml  %{buildroot}/usr/share/microtunnel/examples/relay.yaml
+install -m 644 %{_sourcedir}/packaging/examples/peer.yaml   %{buildroot}/usr/share/microtunnel/examples/peer.yaml
 
 %files
 /usr/bin/microtunnel
-/usr/share/microtunnel/microtunnel-create-tunnel.sh
 /usr/share/microtunnel/examples/relay.yaml
 /usr/share/microtunnel/examples/peer.yaml
-/usr/bin/microtunnel-extract-keys-hex.sh
-/usr/bin/microtunnel-extract-pubkey-hex.sh
-/usr/bin/microtunnel-generate-peer-keys.sh
 /usr/bin/microtunnel-create-tunnel.sh
 /usr/lib/systemd/system/microtunnel.service
 /usr/lib/systemd/system/microtunnel@.service

@@ -76,10 +76,7 @@ Both packages install:
 | Path | Description |
 |------|-------------|
 | `/usr/bin/microtunnel` | The tunnel binary |
-| `/usr/bin/microtunnel-generate-peer-keys.sh` | Key pair generator |
-| `/usr/bin/microtunnel-extract-keys-hex.sh` | Extract private + public key hex |
-| `/usr/bin/microtunnel-extract-pubkey-hex.sh` | Extract public key hex from `.crt` |
-| `/usr/share/microtunnel/microtunnel-create-tunnel.sh` | TUN interface setup helper (only needed if your config has no `tunnel_address`) |
+| `/usr/bin/microtunnel-create-tunnel.sh` | TUN interface setup helper (only needed if your config has no `tunnel_address`) |
 | `/usr/share/microtunnel/examples/relay.yaml`, `peer.yaml` | Annotated sample configs (`microtunnel init` writes a finished one for you) |
 | `/lib/systemd/system/microtunnel.service` | The service: runs `/etc/microtunnel/microtunnel.yaml` (a relay or a peer: the config decides) |
 | `/lib/systemd/system/microtunnel@.service` | Template for extra instances: `microtunnel@home` runs `/etc/microtunnel/home.yaml` |
@@ -136,13 +133,7 @@ Each node (relay and every peer) needs its own X25519 key pair, generated **loca
 sudo microtunnel keygen microtunnel -dir /etc/microtunnel      # writes microtunnel.key (private) and microtunnel.crt (public)
 ```
 
-Exchange only **public keys** between machines, never the `.key` files: the relay needs each peer's public key, and each peer needs the relay's. `keygen` prints the public key hex; to read it later from a `.crt`:
-
-```bash
-microtunnel-extract-pubkey-hex.sh /etc/microtunnel/microtunnel.crt
-```
-
-**Without `openssl`:** the `microtunnel` binary can generate keys itself. It writes `<name>.key` (private, mode 0600) and `<name>.crt`, prints the public key hex, and never overwrites existing files:
+Exchange only **public keys** between machines, never the `.key` files: the relay needs each peer's public key, and each peer needs the relay's. `keygen` and `init` print the public key hex, and the daemon logs it at startup (`journalctl -u microtunnel | grep "public key"`). `keygen` writes `<name>.key` (private, mode 0600) and `<name>.crt`, and never overwrites existing files. No `openssl` is needed.
 
 ```bash
 microtunnel keygen peer-3 -dir /etc/microtunnel
