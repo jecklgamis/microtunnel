@@ -78,7 +78,7 @@ peers:
     allowed_ips:
       - 10.9.0.0/24
 ```
-Unknown keys are ignored. On macOS use `interface: utun` (kernel assigns `utunN`; a non-`utunN` name is ignored) plus `tunnel_address`, because a utun device only exists once opened — see `config/peer-macos.yaml` and `scripts/run-macos.sh` (runs `sudo ./microtunnel`). When `tunnel_address` is unset the interface is expected to be configured externally (Docker entrypoint / `create-tunnel.sh` on Linux). Limits: 64 peers, 16 `allowed_ips` per peer, interface name ≤ 15 chars. Endpoint hostnames are resolved at startup (failure is fatal) and re-resolved before each reconnect.
+Unknown keys are ignored. On macOS use `interface: utun` (kernel assigns `utunN`; a non-`utunN` name is ignored) plus `tunnel_address`, because a utun device only exists once opened (`microtunnel init peer` writes this; run `sudo microtunnel`). When `tunnel_address` is unset the interface is expected to be configured externally (Docker entrypoint / `create-tunnel.sh` on Linux). Limits: 64 peers, 16 `allowed_ips` per peer, interface name ≤ 15 chars. Endpoint hostnames are resolved at startup (failure is fatal) and re-resolved before each reconnect.
 
 ### Dynamic peers
 `peers_dir` files hold one peer each (`public_key`, optional `endpoint`, `allowed_ips`; file name = peer name). Duplicate public keys anywhere are a config error. `Peer.Reload` (SIGHUP or directory change) diffs by public key under the table write lock: added peers become known; removed peers' sessions and pending handshakes are dropped at once; changed `allowed_ips` update the live session's routes with no re-handshake; a changed endpoint cancels a pending handshake and is re-resolved. A failed reload (bad file) changes nothing. `peerConfig` objects are replaced wholesale, never mutated, and `pendingHS` holds a `*peerConfig` (not an index) so reloads cannot invalidate in-flight handshakes. Only peers reload; other settings need a restart. Housekeeping runs `dialDue` every tick (rate-limited by `reconnect_interval`) so a peer rejected before the relay loaded it retries quickly; generated spoke configs set `reconnect_interval: 5`.
@@ -188,7 +188,6 @@ make image
 ## Docker
 - `Dockerfile` — multi-stage, multi-arch (builder runs on `$BUILDPLATFORM` and cross-compiles for `$TARGETARCH`; `build.yaml` publishes linux/amd64 + linux/arm64) (`golang:1.26-bookworm` builder → `debian:bookworm-slim`); includes iproute2, nginx, curl, ping, ifconfig, ssh, Envoy proxy; bundles `config/` into the image. No libssl/libyaml needed.
 - `scripts/docker-entrypoint.sh` — creates TUN, starts nginx, optionally starts Envoy (when `ENVOY_UPSTREAM_HOST` is set), execs `microtunnel -c $PEER_CONFIG`
-- `scripts/common.sh` — shared helpers: OpenSSL detection (Homebrew on macOS), `extract_pub`, `detect_local_ip` (macOS/Linux)
 - `scripts/extract-keys-hex.sh <file.key>` — prints private and public key hex from an X25519 `.key` PEM file
 - `scripts/extract-pubkey-hex.sh <file.crt>` — prints public key hex from an X25519 `.crt` PEM file
 - `scripts/generate-peer-keys.sh <name> [name2 ...]` — generates X25519 key pairs (`.key` / `.crt`) for each given name
@@ -197,11 +196,8 @@ make image
   - **HTTP proxy** on `0.0.0.0:15050` — L7 with upstream connection pooling (~130 requests/connection); recommended for HTTP workloads
   - Admin interface on `0.0.0.0:9901`
 - `scripts/create-tunnel.sh <tunnel> <ip/cidr> [routes...]` — creates TUN interface, assigns overlay IP, disables ICMP redirects
-- `scripts/run-relay.sh` — native Linux wrapper: runs `./microtunnel -c config/relay.yaml` (does not create the TUN interface itself — run `create-tunnel.sh` first)
-- `scripts/run-peer-1.sh` / `scripts/run-peer-2.sh` — native Linux wrappers for `config/peer-1.yaml` / `config/peer-2.yaml`
 - `scripts/run-relay-in-docker.sh` — runs relay container from `config/relay.yaml` on the shared `microtunnel-net` Docker network (created if missing); mounts key, exposes UDP 5040 and Envoy admin 9901
 - `scripts/run-peer-1-in-docker.sh` / `scripts/run-peer-2-in-docker.sh` — run peer containers on `microtunnel-net`; mount key, expose ports for UDP tunnel, Envoy TCP/HTTP proxy, and admin
-- `scripts/exec-shell-to-relay-container.sh` / `exec-shell-to-peer-1-container.sh` / `exec-shell-to-peer-2-container.sh` — open a bash shell in a running container
 - `scripts/test-tunnel-relay.sh` — ping + curl both peers (10.9.0.2, 10.9.0.3) from relay
 - `scripts/test-tunnel-using-peer-1.sh [target_ip]` — ping + curl from peer-1 (default target: 10.9.0.3)
 - `scripts/test-tunnel-using-peer-2.sh [target_ip]` — ping + curl from peer-2 (default target: 10.9.0.2)
@@ -209,7 +205,6 @@ make image
 - `scripts/run-init-test.sh` — end-to-end test behind `make init-test` (container-local admin socket, same reason as below)
 - `scripts/run-enroll-test.sh` — end-to-end test behind `make enroll-test` (the admin socket lives at `/tmp/admin.sock` inside the relay container because Docker Desktop for Mac bind mounts cannot chmod sockets)
 - `scripts/run-dynamic-peers-test.sh` — end-to-end test behind `make dynamic-test` (work dir `build/dyn-test`, removed on exit)
-- `scripts/run-perf-test.sh [base_url]` — runs a Gatling load test container against an Envoy HTTP proxy endpoint (defaults to peer-1's `:15052` on the detected host IP)
 - `scripts/create-tag.sh` — creates a git tag; auto-increments the rc number from the latest tag if `VERSION` env var is not set
 
 ## CLI Options
