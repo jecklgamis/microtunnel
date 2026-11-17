@@ -7,13 +7,11 @@ on:
     branches: [ main ]
 
 jobs:
-  # Fast gate: gofmt, vet and the race-detector test suite. Linux and macOS, because
-  # the TUN code differs per OS (the tests use in-memory devices, so no root is needed).
+  # Fast gate: gofmt, vet and the race-detector test suite. Runs on Linux only for now
+  # (hosted macOS runners are often unavailable); `make vet` still type-checks the macOS
+  # code by cross-vetting with GOOS=darwin. The tests use in-memory devices, so no root.
   check:
-    strategy:
-      matrix:
-        os: [ubuntu-latest, macos-latest]
-    runs-on: ${{ matrix.os }}
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v7
