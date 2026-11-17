@@ -5,13 +5,17 @@ TEST_IMAGE   ?= microtunnel-test:latest
 
 GO ?= go
 
-# Package versions (overridden by the release workflow from the git tag).
-VERSION      ?= 1.0.0
+# Package version: from the nearest `v*` git tag (v1.2.3 -> 1.2.3, or 1.2.3-4-gabc1234 past a
+# tag), else 1.0.0 when there is no tag or no git. Override with `make VERSION=...`; the
+# release workflow passes the pushed tag explicitly.
+GIT_VERSION  := $(shell git describe --tags --match 'v[0-9]*' --dirty 2>/dev/null | sed 's/^v//')
+VERSION      ?= $(if $(GIT_VERSION),$(GIT_VERSION),1.0.0)
 DEB_VERSION  ?= $(VERSION)
 DEB_ARCH     ?= amd64
 DEB_PKG      := microtunnel_$(DEB_VERSION)_$(DEB_ARCH)
 DEB_ROOT     := build/$(DEB_PKG)
-RPM_VERSION  ?= $(VERSION)
+# rpm versions cannot contain "-" (the release field carries that part).
+RPM_VERSION  ?= $(firstword $(subst -, ,$(VERSION)))
 RPM_RELEASE  ?= 1
 RPM_ARCH     ?= x86_64
 
