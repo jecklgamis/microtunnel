@@ -1,0 +1,75 @@
+# Demo: a relay and two peers on one machine.   docker compose up
+#
+# peer-1 and peer-2 can only reach each other through the encrypted tunnel via the relay.
+# The `check` service waits for the tunnel, then pings and curls peer-2 from peer-1.
+#
+# Uses the public DEMO keys and pre-shared key from config/ (mounted read-only; the keys are
+# kept out of the image). Never use them on a real network. Generate your own with
+# `microtunnel keygen <name>`.
+#
+# Needs NET_ADMIN and /dev/net/tun (Docker Desktop on macOS supports both).
+
+x-node: &node
+  image: jecklgamis/microtunnel:latest
+  build: .
+  cap_add: [NET_ADMIN]
+  devices: ["/dev/net/tun:/dev/net/tun"]
+
+# Point the image's demo config at the relay container, then hand over to the normal entrypoint.
+x-prep: &prep >-
+  sed -E -e 's#^( *endpoint: ).*#\1relay:5040#'
+  config/$${NODE}.yaml > /tmp/$${NODE}.yaml &&
+  PEER_CONFIG=/tmp/$${NODE}.yaml exec ./docker-entrypoint.sh
+
+services:
+  relay:
+    <<: *node
+    container_name: microtunnel-relay
+    entrypoint: ["bash", "-c", *prep]
+    environment:
+      NODE: relay
+      PEER_IP: 10.9.0.1/24
+    volumes: ["./config/relay.key:/etc/microtunnel/relay.key:ro"]
+    ports: ["5040:5040/udp"]
+
+  peer-1:
+    <<: *node
+    container_name: microtunnel-peer-1
+    entrypoint: ["bash", "-c", *prep]
+    environment:
+      NODE: peer-1
+      PEER_IP: 10.9.0.2/24
+      ENVOY_UPSTREAM_HOST: 10.9.0.3   # peer-1's Envoy proxies to peer-2's nginx
+    volumes: ["./config/peer-1.key:/etc/microtunnel/peer-1.key:ro"]
+    ports: ["15052:15050"]            # curl http://localhost:15052
+    depends_on: [relay]
+
+  peer-2:
+    <<: *node
+    container_name: microtunnel-peer-2
+    entrypoint: ["bash", "-c", *prep]
+    environment:
+      NODE: peer-2
+      PEER_IP: 10.9.0.3/24
+    volumes: ["./config/peer-2.key:/etc/microtunnel/peer-2.key:ro"]
+    depends_on: [relay]
+
+  # Runs inside peer-1's network namespace, so it uses peer-1's tunnel interface.
+  check:
+    <<: *node
+    network_mode: service:peer-1
+    restart: "no"
+    depends_on: [peer-1, peer-2]
+    entrypoint:
+      - bash
+      - -c
+      - |
+        for i in $$(seq 1 30); do
+          ping -c 1 -W 1 10.9.0.3 >/dev/null 2>&1 && break
+          sleep 1
+        done
+        echo "=== ping peer-2 (10.9.0.3) from peer-1 ==="
+        ping -c 3 10.9.0.3 || { echo "TUNNEL CHECK FAILED"; exit 1; }
+        echo "=== curl peer-2's web page through the tunnel ==="
+        curl -s --max-time 5 http://10.9.0.3 | grep -E '<h1>|Host IP' || { echo "TUNNEL CHECK FAILED"; exit 1; }
+        echo "=== TUNNEL OK: peer-1 reached peer-2 through the relay ==="

@@ -219,7 +219,15 @@ See [Dynamic Peers](docs/index.md#adding-peers-without-a-restart), the [Admin So
 
 ## Running With Docker
 
-The easiest way to try it on one machine: a relay and two peers in containers, each with its own network namespace. Build the image once, then start each container in its own terminal:
+The easiest way to try it on one machine: a relay and two peers in containers, each with its own network namespace. With Docker Compose it is one command:
+
+```bash
+docker compose up --build
+```
+
+It starts the relay and both peers, waits for the tunnel, then pings and curls peer-2 from peer-1 and prints `TUNNEL OK`. The peers keep running afterwards: `curl http://localhost:15052` goes through peer-1's Envoy proxy and the tunnel to peer-2's nginx. Stop everything with `docker compose down`. It uses the public demo keys in `config/`, so it is for trying things out only.
+
+Or build the image once and start each container yourself, one terminal each:
 
 ```bash
 make image
