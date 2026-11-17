@@ -37,7 +37,13 @@ With Docker, from a checkout of this repo:
 docker compose up --build
 ```
 
-It starts a relay and two peers on your machine, then pings and curls one peer from the other through the tunnel and prints `TUNNEL OK`. For real machines, see [Running](#running).
+It starts a relay and two peers on your machine, then pings and curls one peer from the other through the tunnel and prints `TUNNEL OK`. The peers keep running, so in another terminal you can test the tunnel yourself:
+
+```bash
+curl http://localhost:15052    # peer-1's proxy -> tunnel -> relay -> peer-2's web page
+```
+
+Stop it with Ctrl+C, then `docker compose down`. For real machines, see [Running](#running).
 
 ## Features
 
