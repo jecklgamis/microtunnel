@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/jecklgamis/microtunnel/internal/config"
+	"github.com/jecklgamis/microtunnel/internal/setup"
 )
 
 func initCmd(t *testing.T, args ...string) (string, error) {
@@ -42,7 +43,7 @@ func TestInitRelayThenPeerThroughTheCLI(t *testing.T) {
 	if strings.Contains(out, "--psk ") || strings.Contains(out, " -psk ") {
 		t.Fatalf("the PSK must not be suggested as a command-line argument (it shows in `ps`):\n%s", out)
 	}
-	if !strings.Contains(out, "sudo microtunnel -c "+filepath.Join(relayDir, "relay.yaml")) {
+	if !strings.Contains(out, "sudo microtunnel -c "+filepath.Join(relayDir, "microtunnel.yaml")) {
 		t.Fatalf("a non-default dir should print the explicit -c command:\n%s", out)
 	}
 
@@ -101,7 +102,7 @@ func TestInitPeerPSKSourcesAndPriority(t *testing.T) {
 			if _, err := initCmd(t, append([]string{"peer", "-dir", dir, "-relay", "r:5040", "-relay-key", relayKey}, args...)...); err != nil {
 				t.Fatal(err)
 			}
-			if cfg, err := config.Load(filepath.Join(dir, "peer.yaml")); err != nil || cfg.PreSharedKey != psk {
+			if cfg, err := config.Load(filepath.Join(dir, "microtunnel.yaml")); err != nil || cfg.PreSharedKey != psk {
 				t.Fatalf("psk not applied (trailing newline in the file must be trimmed): %v %+v", err, cfg)
 			}
 		})
@@ -112,7 +113,7 @@ func TestInitPeerPSKSourcesAndPriority(t *testing.T) {
 	if _, err := initCmd(t, "peer", "-dir", dir, "-relay", "r:5040", "-relay-key", relayKey, "-psk", psk); err != nil {
 		t.Fatal(err)
 	}
-	if cfg, _ := config.Load(filepath.Join(dir, "peer.yaml")); cfg.PreSharedKey != psk {
+	if cfg, _ := config.Load(filepath.Join(dir, "microtunnel.yaml")); cfg.PreSharedKey != psk {
 		t.Fatalf("the environment overrode an explicit -psk")
 	}
 	if _, err := initCmd(t, "peer", "-dir", t.TempDir(), "-relay", "r:5040", "-relay-key", relayKey, "-psk-file", "/nonexistent"); err == nil {
@@ -159,13 +160,43 @@ func TestInitUsageErrors(t *testing.T) {
 }
 
 func TestUnitNamesAndHints(t *testing.T) {
-	if peerUnit("peer") != "microtunnel-peer" || peerUnit("laptop") != "microtunnel-peer@laptop" {
+	if setup.Unit("microtunnel") != "microtunnel" || setup.Unit("") != "microtunnel" || setup.Unit("laptop") != "microtunnel@laptop" {
 		t.Fatal("unit names")
 	}
-	if startHint("microtunnel-relay", "/etc/microtunnel/relay.yaml", "/etc/microtunnel") != "sudo systemctl enable --now microtunnel-relay" {
+	if startHint("microtunnel", "/etc/microtunnel/microtunnel.yaml", "/etc/microtunnel") != "sudo systemctl enable --now microtunnel" {
 		t.Fatal("default dir should print the systemctl command")
+	}
+	if cFlag(setup.DefaultConfigPath, "/etc/microtunnel") != "" || cFlag("/tmp/x/microtunnel.yaml", "/tmp/x") != " -c /tmp/x/microtunnel.yaml" {
+		t.Fatal("cFlag")
 	}
 	if got := startHint("u", "/tmp/x/relay.yaml", "/tmp/x"); got != "sudo microtunnel -c /tmp/x/relay.yaml" {
 		t.Fatalf("custom dir hint = %q", got)
+	}
+}
+
+func TestInitRelayHonoursNameForTheFilesAndTheUnit(t *testing.T) {
+	dir := t.TempDir()
+	out, err := initCmd(t, "relay", "-dir", dir, "-name", "home")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, f := range []string{"home.yaml", "home.key", "home.crt", "home.peers.d"} {
+		if _, err := os.Stat(filepath.Join(dir, f)); err != nil {
+			t.Errorf("missing %s: %v", f, err)
+		}
+	}
+	cfg, err := config.Load(filepath.Join(dir, "home.yaml"))
+	if err != nil || cfg.AdminSocket != "/run/microtunnel-home/admin.sock" {
+		t.Fatalf("named instance must use its own runtime dir: %v %+v", err, cfg)
+	}
+	if !strings.Contains(out, "peer add <name> -public-key <hex> -c "+filepath.Join(dir, "home.yaml")) {
+		t.Fatalf("the peer-add hint must say which config to use:\n%s", out)
+	}
+	// A second instance in the same directory does not collide with the first.
+	if _, err := initCmd(t, "relay", "-dir", dir); err != nil {
+		t.Fatalf("default instance beside a named one: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "microtunnel.yaml")); err != nil {
+		t.Fatal(err)
 	}
 }

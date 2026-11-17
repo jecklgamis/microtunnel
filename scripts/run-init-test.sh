@@ -55,8 +55,8 @@ HINT=$(echo "$OUT" | grep 'MICROTUNNEL_PSK=')
 PSK=$(echo "$HINT" | sed -n 's/.*MICROTUNNEL_PSK=\([0-9a-f]*\) .*/\1/p')
 RELAY_KEY=$(echo "$HINT" | sed -n 's/.*-relay-key \([0-9a-f]*\).*/\1/p')
 [ ${#PSK} = 64 ] && [ ${#RELAY_KEY} = 64 ] || fail "could not read the peer hint from init relay"
-grep -q "tunnel_address: 10.9.0.1/24" "$WORK/relay/relay.yaml" || fail "relay config has no tunnel_address"
-start relay /data /data/relay/relay.yaml
+grep -q "tunnel_address: 10.9.0.1/24" "$WORK/relay/microtunnel.yaml" || fail "relay config has no tunnel_address"
+start relay /data /data/relay/microtunnel.yaml
 wait_for "relay to start" 20 sh -c "docker logs $P-relay 2>&1 | grep -q 'Admin API listening'"
 STARTED=$(docker inspect -f '{{.State.StartedAt}}' "$P-relay")
 

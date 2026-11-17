@@ -25,6 +25,7 @@ import (
 	"github.com/jecklgamis/microtunnel/internal/logx"
 	"github.com/jecklgamis/microtunnel/internal/peer"
 	"github.com/jecklgamis/microtunnel/internal/proto"
+	"github.com/jecklgamis/microtunnel/internal/setup"
 	"github.com/jecklgamis/microtunnel/internal/tun"
 )
 
@@ -56,10 +57,10 @@ func run() error {
 			return runJoin(os.Args[2:], os.Stdout, os.Stderr)
 		}
 	}
-	configPath := flag.String("c", "peer.yaml", "YAML config file")
+	configPath := flag.String("c", setup.DefaultConfigPath, "YAML config file")
 	showVersion := flag.Bool("version", false, "print version and exit")
 	flag.Usage = func() {
-		fmt.Fprintf(flag.CommandLine.Output(), "Usage: %s [-c <config.yaml>]\n       %s peer add|remove|list ...  (see `%s init help`, `peer help`, `enroll help`, `join -h`)\n", os.Args[0], os.Args[0], os.Args[0])
+		fmt.Fprintf(flag.CommandLine.Output(), "Usage: %s [-c <config.yaml>]   (default %s)\n       %s peer add|remove|list ...  (see `%s init help`, `peer help`, `enroll help`, `join -h`)\n", os.Args[0], setup.DefaultConfigPath, os.Args[0], os.Args[0])
 		flag.PrintDefaults()
 	}
 	flag.Parse()

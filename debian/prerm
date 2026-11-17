@@ -1,8 +1,8 @@
 #!/bin/bash
 set -e
 
-instances=$(systemctl list-units --all --plain --no-legend 'microtunnel-peer@*.service' 2>/dev/null | awk '{print $1}')
-for svc in microtunnel-relay microtunnel-peer microtunnel-peer-1 microtunnel-peer-2 $instances; do
+instances=$(systemctl list-units --all --plain --no-legend 'microtunnel@*.service' 2>/dev/null | awk '{print $1}')
+for svc in microtunnel $instances; do
     if systemctl is-active --quiet "$svc"; then
         systemctl stop "$svc"
     fi

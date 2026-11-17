@@ -17,6 +17,7 @@ import (
 	"github.com/jecklgamis/microtunnel/internal/adminapi"
 	"github.com/jecklgamis/microtunnel/internal/config"
 	"github.com/jecklgamis/microtunnel/internal/proto"
+	"github.com/jecklgamis/microtunnel/internal/setup"
 )
 
 const peerUsage = `Usage:
@@ -29,7 +30,7 @@ Where it acts:
                      change immediately and reports live session state. Reach a remote
                      relay by forwarding its socket over SSH:
                        ssh -L /tmp/mt.sock:/run/microtunnel/admin.sock relay
-  -c <file>          relay config file (default peer.yaml). If it sets admin_socket and the
+  -c <file>          relay config file (default /etc/microtunnel/microtunnel.yaml). If it sets admin_socket and the
                      socket is reachable that is used; otherwise the CLI edits peers_dir
                      directly (a running relay loads the change within a second or two).
 
@@ -54,7 +55,7 @@ func runPeerCmd(args []string, stdout, stderr io.Writer) error {
 	fs := flag.NewFlagSet("peer "+sub, flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	fs.Usage = func() { fmt.Fprint(stderr, peerUsage) }
-	configPath := fs.String("c", "peer.yaml", "relay config file")
+	configPath := fs.String("c", setup.DefaultConfigPath, "relay config file")
 	socket := fs.String("socket", "", "relay admin socket")
 
 	var (

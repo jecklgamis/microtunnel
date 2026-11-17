@@ -292,6 +292,6 @@ func runJoin(args []string, stdout, stderr io.Writer) error {
 	}
 	fmt.Fprintf(stdout, "Enrolled as %q with overlay address %s\n", res.Name, res.IP)
 	fmt.Fprintf(stdout, "  private key: %s (mode 0600)\n  public key:  %s\n  config:      %s\n\n", res.KeyFile, res.CrtFile, res.ConfigFile)
-	fmt.Fprintf(stdout, "Start it with:\n\n  %s\n", startHint(peerUnit(res.Name), res.ConfigFile, *dir))
+	fmt.Fprintf(stdout, "Start it with:\n\n  %s\n", startHint(setup.Unit(res.Name), res.ConfigFile, *dir))
 	return nil
 }

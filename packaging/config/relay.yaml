@@ -1,8 +1,10 @@
-# microtunnel RELAY config template (installed by the package).
+# microtunnel RELAY config EXAMPLE (installed to /usr/share/microtunnel/examples/).
+# Easiest: `sudo microtunnel init relay` writes a finished config for you. To use this by hand,
+# copy it to /etc/microtunnel/microtunnel.yaml (the file the `microtunnel` service reads).
 # It contains NO keys or secrets: fill in the <...> values before starting the service.
 #
-# 1. Create this machine's key pair (writes relay.key and relay.crt):
-#      sudo microtunnel keygen relay -dir /etc/microtunnel
+# 1. Create this machine's key pair (writes microtunnel.key and microtunnel.crt):
+#      sudo microtunnel keygen microtunnel -dir /etc/microtunnel
 # 2. Replace pre_shared_key with a long random secret (e.g. `openssl rand -hex 32`);
 #    every peer must use the same value.
 # 3. Add peers with `microtunnel peer add` (see "Adding Peers Without a Restart" in the
@@ -10,7 +12,7 @@
 #    without restarting the relay.
 interface: microtunnel0
 port: 5040
-private_key_file: /etc/microtunnel/relay.key
+private_key_file: /etc/microtunnel/microtunnel.key
 pre_shared_key: <replace-with-a-long-random-secret>
 verbose: false
 

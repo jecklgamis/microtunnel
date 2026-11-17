@@ -107,7 +107,7 @@ func TestInitRelayNeverClobbersAnExistingKeyOrConfig(t *testing.T) {
 func TestInitRelayReusesAKeyMadeEarlier(t *testing.T) {
 	dir := t.TempDir()
 	k, _ := proto.GenerateKey()
-	if _, _, err := proto.WriteKeyPair(filepath.Join(dir, "relay"), k); err != nil { // e.g. an earlier `microtunnel keygen relay`
+	if _, _, err := proto.WriteKeyPair(filepath.Join(dir, "microtunnel"), k); err != nil { // e.g. an earlier `microtunnel keygen relay`
 		t.Fatal(err)
 	}
 	res, err := InitRelay(RelayOptions{Dir: dir})
@@ -120,7 +120,7 @@ func TestInitRelayReusesAKeyMadeEarlier(t *testing.T) {
 
 	// A key that cannot be read is reported and left alone.
 	dir2 := t.TempDir()
-	bad := filepath.Join(dir2, "relay.key")
+	bad := filepath.Join(dir2, "microtunnel.key")
 	_ = os.WriteFile(bad, []byte("not a key"), 0o600)
 	if _, err := InitRelay(RelayOptions{Dir: dir2}); err == nil || !strings.Contains(err.Error(), "was not touched") {
 		t.Fatalf("err=%v", err)
@@ -128,7 +128,7 @@ func TestInitRelayReusesAKeyMadeEarlier(t *testing.T) {
 	if got, _ := os.ReadFile(bad); string(got) != "not a key" {
 		t.Fatal("an unreadable key file was modified")
 	}
-	if _, err := os.Stat(filepath.Join(dir2, "relay.yaml")); err == nil {
+	if _, err := os.Stat(filepath.Join(dir2, "microtunnel.yaml")); err == nil {
 		t.Fatal("a config was written despite the key problem")
 	}
 }
@@ -196,7 +196,7 @@ func TestInitPeerBeforeTheAddressIsAssigned(t *testing.T) {
 	if err != nil || cfg.TunnelAddress.IsValid() || cfg.Peers[0].AllowedIPs[0].String() != "10.50.0.0/16" {
 		t.Fatalf("cfg=%+v err=%v", cfg, err)
 	}
-	if res.Address.IsValid() || res.Name != "peer" {
+	if res.Address.IsValid() || res.Name != "microtunnel" {
 		t.Fatalf("result = %+v", res)
 	}
 }
@@ -301,4 +301,41 @@ func mustRelay(t *testing.T) *RelayResult {
 		t.Fatal(err)
 	}
 	return res
+}
+
+func TestNamingHelpers(t *testing.T) {
+	if Unit("") != "microtunnel" || Unit("microtunnel") != "microtunnel" || Unit("home") != "microtunnel@home" {
+		t.Fatal("Unit")
+	}
+	if AdminSocketFor("") != "/run/microtunnel/admin.sock" || AdminSocketFor("home") != "/run/microtunnel-home/admin.sock" {
+		t.Fatal("AdminSocketFor")
+	}
+	if DefaultConfigPath != "/etc/microtunnel/microtunnel.yaml" {
+		t.Fatalf("DefaultConfigPath=%s", DefaultConfigPath)
+	}
+}
+
+func TestNamedInstancesDoNotShareFilesOrPeers(t *testing.T) {
+	dir := t.TempDir()
+	a, err := InitRelay(RelayOptions{Dir: dir})
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := InitRelay(RelayOptions{Dir: dir, Name: "home", Address: "10.20.0.1/24"})
+	if err != nil {
+		t.Fatalf("a named instance beside the default one: %v", err)
+	}
+	if a.ConfigFile == b.ConfigFile || a.KeyFile == b.KeyFile || a.PeersDir == b.PeersDir || a.PublicKey == b.PublicKey {
+		t.Fatalf("instances collide:\n%+v\n%+v", a, b)
+	}
+	if filepath.Base(a.PeersDir) != "peers.d" || filepath.Base(b.PeersDir) != "home.peers.d" {
+		t.Fatalf("peers dirs: %s %s", a.PeersDir, b.PeersDir)
+	}
+	cfgB, err := config.Load(b.ConfigFile)
+	if err != nil || cfgB.AdminSocket != "/run/microtunnel-home/admin.sock" || cfgB.PeersDir != b.PeersDir {
+		t.Fatalf("named config: %v %+v", err, cfgB)
+	}
+	if _, err := InitRelay(RelayOptions{Dir: dir, Name: "../evil"}); err == nil {
+		t.Fatal("a name with a path separator must be rejected")
+	}
 }

@@ -512,8 +512,8 @@ func mustParse(t *testing.T, y string) *Config {
 
 func TestPackagedTemplatesAreSafePlaceholders(t *testing.T) {
 	files, err := filepath.Glob(filepath.Join("..", "..", "packaging", "config", "*.yaml"))
-	if err != nil || len(files) != 4 {
-		t.Fatalf("expected the 4 packaged templates, got %v (%v)", files, err)
+	if err != nil || len(files) != 2 {
+		t.Fatalf("expected the 2 packaged examples (relay, peer), got %v (%v)", files, err)
 	}
 	keyPlaceholder := regexp.MustCompile(`<[a-z0-9-]*public-key-hex>`)
 	anyPlaceholder := regexp.MustCompile(`<[^>\n]+>`)

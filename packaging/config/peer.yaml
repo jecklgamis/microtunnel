@@ -1,14 +1,16 @@
-# microtunnel PEER config template (installed by the package).
+# microtunnel PEER config EXAMPLE (installed to /usr/share/microtunnel/examples/).
+# Easiest: `sudo microtunnel init peer` writes a finished config for you. To use this by hand,
+# copy it to /etc/microtunnel/microtunnel.yaml (the file the `microtunnel` service reads).
 # It contains NO keys or secrets: fill in the <...> values before starting the service.
 #
-# 1. Create this machine's key pair (writes peer.key and peer.crt):
-#      sudo microtunnel keygen peer -dir /etc/microtunnel
+# 1. Create this machine's key pair (writes microtunnel.key and microtunnel.crt):
+#      sudo microtunnel keygen microtunnel -dir /etc/microtunnel
 #    and give the printed public key to the relay's administrator.
 # 2. Use the same pre_shared_key as the relay.
-# 3. Set the relay's public key (printed by `microtunnel keygen relay` on the relay) and address.
+# 3. Set the relay's public key (printed by `microtunnel init relay` on the relay) and address.
 interface: microtunnel0
 port: 5040
-private_key_file: /etc/microtunnel/peer.key
+private_key_file: /etc/microtunnel/microtunnel.key
 pre_shared_key: <same-secret-as-the-relay>
 verbose: false
 # Optional: let microtunnel assign this machine's overlay address itself

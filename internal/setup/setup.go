@@ -31,9 +31,41 @@ import (
 // DefaultDir is where the packages keep configuration.
 const DefaultDir = "/etc/microtunnel"
 
-// DefaultAdminSocket is the relay's admin socket in the packaged layout (the
-// relay unit creates /run/microtunnel).
-const DefaultAdminSocket = "/run/microtunnel/admin.sock"
+// DefaultName names the default instance: config /etc/microtunnel/microtunnel.yaml,
+// key microtunnel.key, run by the `microtunnel` service. The same program is a
+// relay or a peer; the config decides which.
+const DefaultName = "microtunnel"
+
+// DefaultConfigPath is the config the default service (and the CLI) uses.
+const DefaultConfigPath = DefaultDir + "/" + DefaultName + ".yaml"
+
+// Unit returns the systemd unit that runs the instance called name: the plain
+// `microtunnel` service for the default instance, `microtunnel@<name>` otherwise.
+func Unit(name string) string {
+	if name == "" || name == DefaultName {
+		return "microtunnel"
+	}
+	return "microtunnel@" + name
+}
+
+// AdminSocketFor is the admin socket path the packaged units create a runtime
+// directory for: /run/microtunnel for the default instance, /run/microtunnel-<name>
+// for a named one.
+func AdminSocketFor(name string) string {
+	if name == "" || name == DefaultName {
+		return "/run/microtunnel/admin.sock"
+	}
+	return "/run/microtunnel-" + name + "/admin.sock"
+}
+
+// peersDirFor is the peers directory beside the config: peers.d for the default
+// instance, <name>.peers.d for a named one (so instances never share peers).
+func peersDirFor(dir, name string) string {
+	if name == DefaultName {
+		return filepath.Join(dir, "peers.d")
+	}
+	return filepath.Join(dir, name+".peers.d")
+}
 
 // NoAdminSocket, as RelayOptions.AdminSocket, turns the admin API off.
 const NoAdminSocket = "none"
@@ -41,10 +73,11 @@ const NoAdminSocket = "none"
 // RelayOptions configures InitRelay.
 type RelayOptions struct {
 	Dir         string // config directory (default DefaultDir)
+	Name        string // names the files <name>.key/.yaml (default DefaultName)
 	Address     string // the relay's overlay address with prefix (default 10.9.0.1/24)
 	Port        int    // UDP port (default 5040)
 	Endpoint    string // public host:port, written as public_endpoint and used in the peer hint
-	AdminSocket string // default DefaultAdminSocket; NoAdminSocket disables
+	AdminSocket string // default AdminSocketFor(Name); NoAdminSocket disables
 	Force       bool   // overwrite an existing relay.yaml (a new pre-shared key is generated)
 }
 
@@ -66,7 +99,7 @@ type RelayResult struct {
 // PeerOptions configures InitPeer.
 type PeerOptions struct {
 	Dir      string // config directory (default DefaultDir)
-	Name     string // names the files: <name>.key, <name>.crt, <name>.yaml (default "peer")
+	Name     string // names the files: <name>.key, <name>.crt, <name>.yaml (default DefaultName)
 	Relay    string // the relay's public host:port
 	RelayKey string // the relay's public key (hex)
 	PSK      string // the relay's pre-shared key
@@ -151,6 +184,12 @@ func InitRelay(o RelayOptions) (*RelayResult, error) {
 	if o.Dir == "" {
 		o.Dir = DefaultDir
 	}
+	if o.Name == "" {
+		o.Name = DefaultName
+	}
+	if !admin.ValidName(o.Name) {
+		return nil, fmt.Errorf("invalid name %q (letters, digits, '.', '_', '-')", o.Name)
+	}
 	if o.Address == "" {
 		o.Address = "10.9.0.1/24"
 	}
@@ -158,7 +197,7 @@ func InitRelay(o RelayOptions) (*RelayResult, error) {
 		o.Port = config.DefaultPort
 	}
 	if o.AdminSocket == "" {
-		o.AdminSocket = DefaultAdminSocket
+		o.AdminSocket = AdminSocketFor(o.Name)
 	}
 	addr, err := netip.ParsePrefix(o.Address)
 	if err != nil || !addr.Addr().Is4() {
@@ -184,8 +223,8 @@ func InitRelay(o RelayOptions) (*RelayResult, error) {
 		return nil, err
 	}
 	res := &RelayResult{
-		ConfigFile: filepath.Join(dir, "relay.yaml"),
-		PeersDir:   filepath.Join(dir, "peers.d"),
+		ConfigFile: filepath.Join(dir, o.Name+".yaml"),
+		PeersDir:   peersDirFor(dir, o.Name),
 		Address:    addr, Port: o.Port, Endpoint: o.Endpoint,
 	}
 	if res.Overwrote, err = checkConfigFree(res.ConfigFile, o.Force); err != nil {
@@ -197,7 +236,7 @@ func InitRelay(o RelayOptions) (*RelayResult, error) {
 	if err := os.MkdirAll(res.PeersDir, 0o750); err != nil {
 		return nil, err
 	}
-	if res.PublicKey, res.KeyFile, res.CrtFile, res.ReusedKey, err = loadOrCreateKey(dir, "relay"); err != nil {
+	if res.PublicKey, res.KeyFile, res.CrtFile, res.ReusedKey, err = loadOrCreateKey(dir, o.Name); err != nil {
 		return nil, err
 	}
 	if res.PSK, err = randomHex(32); err != nil {
@@ -240,7 +279,7 @@ func InitPeer(o PeerOptions) (*PeerResult, error) {
 		o.Dir = DefaultDir
 	}
 	if o.Name == "" {
-		o.Name = "peer"
+		o.Name = DefaultName
 	}
 	if !admin.ValidName(o.Name) {
 		return nil, fmt.Errorf("invalid name %q (letters, digits, '.', '_', '-')", o.Name)

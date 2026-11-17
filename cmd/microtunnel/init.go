@@ -18,22 +18,24 @@ const initUsage = `Usage:
   microtunnel init relay [flags]    set this machine up as a relay
   microtunnel init peer  [flags]    set this machine up as a peer of an existing relay
 
-Both generate the machine's key (an existing key is reused, never replaced) and write a
-complete, validated config. An existing config is never overwritten unless you pass -force.
+The same program is a relay or a peer; the config decides which. Both commands generate the
+machine's key (an existing key is reused, never replaced) and write a complete, validated config. An existing config is never overwritten unless you pass -force.
 
 init relay:
   -dir <dir>            config directory (default /etc/microtunnel)
+  -name <name>          names the files <name>.key/.yaml (default "microtunnel": the config the
+                        'microtunnel' service runs; another name runs as microtunnel@<name>)
   -endpoint <host:port> the relay's public address; handed to peers and shown in the peer hint
   -address <ip/len>     the relay's overlay address (default 10.9.0.1/24)
   -port <n>             UDP port (default 5040)
   -admin-socket <path>  admin API socket (default /run/microtunnel/admin.sock; "none" turns it off)
-  -force                replace an existing relay.yaml (a NEW pre-shared key is generated)
-  -start                also run: systemctl enable --now microtunnel-relay
+  -force                replace an existing config (a NEW pre-shared key is generated)
+  -start                also run: systemctl enable --now microtunnel
 
 init peer:
   -dir <dir>            config directory (default /etc/microtunnel)
-  -name <name>          names the files <name>.key/.yaml (default "peer", which the
-                        microtunnel-peer service uses; any other name uses microtunnel-peer@<name>)
+  -name <name>          names the files <name>.key/.yaml (default "microtunnel": the config the
+                        'microtunnel' service runs; another name runs as microtunnel@<name>)
   -relay <host:port>    the relay's public address                      (required)
   -relay-key <hex>      the relay's public key                          (required)
   -psk <secret>         the relay's pre-shared key; or -psk-file <file>, or the MICROTUNNEL_PSK
@@ -75,6 +77,7 @@ func initRelayCmd(args []string, stdout, stderr io.Writer) error {
 	var o setup.RelayOptions
 	var start bool
 	fs.StringVar(&o.Dir, "dir", setup.DefaultDir, "")
+	fs.StringVar(&o.Name, "name", setup.DefaultName, "")
 	fs.StringVar(&o.Endpoint, "endpoint", "", "")
 	fs.StringVar(&o.Address, "address", "", "")
 	fs.IntVar(&o.Port, "port", 0, "")
@@ -88,7 +91,7 @@ func initRelayCmd(args []string, stdout, stderr io.Writer) error {
 		return fmt.Errorf("unexpected argument %q", fs.Arg(0))
 	}
 	if start && !isDefaultDir(o.Dir) {
-		return errors.New("-start works only with the default config directory (the service reads /etc/microtunnel/relay.yaml)")
+		return errors.New("-start works only with the default config directory (the service reads /etc/microtunnel/<name>.yaml)")
 	}
 
 	res, err := setup.InitRelay(o)
@@ -109,7 +112,7 @@ func initRelayCmd(args []string, stdout, stderr io.Writer) error {
 		fmt.Fprintf(stdout, "\nNOTE: -force generated a NEW pre-shared key. Existing peers must be updated with it.\n")
 	}
 
-	unit := "microtunnel-relay"
+	unit := setup.Unit(o.Name)
 	if start {
 		if err := systemctlEnableNow(unit, stderr); err != nil {
 			return err
@@ -125,7 +128,7 @@ func initRelayCmd(args []string, stdout, stderr io.Writer) error {
 	}
 	fmt.Fprintf(stdout, "\nAdd peers:\n")
 	fmt.Fprintf(stdout, "  # on this relay, for a machine that sends you its public key:\n")
-	fmt.Fprintf(stdout, "  microtunnel peer add <name> -public-key <hex>\n")
+	fmt.Fprintf(stdout, "  microtunnel peer add <name> -public-key <hex>%s\n", cFlag(res.ConfigFile, o.Dir))
 	fmt.Fprintf(stdout, "  # on the new machine (this line contains the pre-shared key: send it over a secure channel):\n")
 	fmt.Fprintf(stdout, "  MICROTUNNEL_PSK=%s microtunnel init peer -relay %s -relay-key %s\n", res.PSK, endpoint, res.PublicKey)
 	return nil
@@ -137,7 +140,7 @@ func initPeerCmd(args []string, stdout, stderr io.Writer) error {
 	var pskFile string
 	var start bool
 	fs.StringVar(&o.Dir, "dir", setup.DefaultDir, "")
-	fs.StringVar(&o.Name, "name", "peer", "")
+	fs.StringVar(&o.Name, "name", setup.DefaultName, "")
 	fs.StringVar(&o.Relay, "relay", "", "")
 	fs.StringVar(&o.RelayKey, "relay-key", "", "")
 	fs.StringVar(&o.PSK, "psk", "", "")
@@ -183,7 +186,7 @@ func initPeerCmd(args []string, stdout, stderr io.Writer) error {
 		fmt.Fprintf(stdout, "  %s\n", rerunHint(o, res.Name))
 	}
 
-	unit := peerUnit(res.Name)
+	unit := setup.Unit(res.Name)
 	if start {
 		if err := systemctlEnableNow(unit, stderr); err != nil {
 			return err
@@ -216,11 +219,12 @@ func isDefaultDir(dir string) bool {
 	return err == nil && abs == setup.DefaultDir
 }
 
-func peerUnit(name string) string {
-	if name == "peer" {
-		return "microtunnel-peer"
+// cFlag is " -c <file>" when the config is not the default one the CLI looks for.
+func cFlag(configFile, dir string) string {
+	if configFile == setup.DefaultConfigPath {
+		return ""
 	}
-	return "microtunnel-peer@" + name
+	return " -c " + configFile
 }
 
 func startHint(unit, configFile, dir string) string {
@@ -235,7 +239,7 @@ func startHint(unit, configFile, dir string) string {
 func rerunHint(o setup.PeerOptions, name string) string {
 	var b strings.Builder
 	b.WriteString("MICROTUNNEL_PSK=<the relay's pre-shared key> microtunnel init peer")
-	if name != "peer" {
+	if name != setup.DefaultName {
 		fmt.Fprintf(&b, " -name %s", name)
 	}
 	if !isDefaultDir(o.Dir) {

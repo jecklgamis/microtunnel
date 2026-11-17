@@ -169,16 +169,18 @@ One command per machine writes a complete, validated config (and the machine's k
 ```bash
 # relay
 sudo microtunnel init relay --endpoint relay.example.com:5040      # key, random PSK, tunnel_address, peers_dir, admin socket
-sudo systemctl enable --now microtunnel-relay
+sudo systemctl enable --now microtunnel                            # the same service on every machine
 
 # each peer (init relay prints this line, with the PSK in an env var so it stays out of `ps`)
 MICROTUNNEL_PSK=<psk> sudo -E microtunnel init peer --relay relay.example.com:5040 --relay-key <relay public key>
 sudo microtunnel peer add laptop -public-key <printed by init peer>      # on the relay; prints the assigned address
 MICROTUNNEL_PSK=<psk> sudo -E microtunnel init peer ... --address 10.9.0.2/24 --force   # key kept; applies the address
-sudo systemctl enable --now microtunnel-peer
+sudo systemctl enable --now microtunnel
 ```
 
-Rules: an existing config is never overwritten without `-force` (which, for a relay, generates a *new* pre-shared key and says so); an existing private key is reused, never replaced; the written config is loaded back through the same validator the daemon uses; secrets are mode 0600. `-start` runs the `systemctl enable --now` step. A peer named something other than `peer` runs as `microtunnel-peer@<name>`.
+The same program is a relay or a peer; **the config decides**, so there is one systemd unit: `microtunnel` runs `/etc/microtunnel/microtunnel.yaml` (and refuses to start until it exists). `init` and `join` write `microtunnel.yaml` and `microtunnel.key` by default; with `--name home` (or a `join` token named `home`) they write `home.yaml`, which runs as `microtunnel@home`, for a machine in more than one overlay (give each config its own `interface:`). The `peer` commands read `/etc/microtunnel/microtunnel.yaml` by default (`-c` overrides).
+
+Rules: an existing config is never overwritten without `-force` (which, for a relay, generates a *new* pre-shared key and says so); an existing private key is reused, never replaced; the written config is loaded back through the same validator the daemon uses; secrets are mode 0600. `-start` runs the `systemctl enable --now` step.
 
 For many machines use [self-service enrollment](#enrollment-service-self-service-join) instead: `microtunnel join` does the peer's whole side in one command. Verify `init` with real TUN devices: `make init-test`.
 
@@ -189,9 +191,9 @@ For many machines use [self-service enrollment](#enrollment-service-self-service
 A relay normally lists every peer in its YAML, and editing that means a restart that drops every session. Instead, point the relay at a directory with **`peers_dir`** and manage peers with the built-in CLI. A running relay notices changes within a second or two, and **sessions of unaffected peers are never interrupted**.
 
 ```yaml
-# relay.yaml
+# /etc/microtunnel/microtunnel.yaml
 interface: microtunnel0
-private_key_file: relay.key
+private_key_file: microtunnel.key
 pre_shared_key: some-psk
 tunnel_address: 10.9.0.1/24     # the overlay subnet peers are allocated from
 peers_dir: peers.d              # relative paths are resolved against this file's directory
@@ -203,15 +205,15 @@ mkdir peers.d                   # once
 
 # Recommended: the new machine makes its own key, so its private key never leaves it
 microtunnel keygen laptop                      # on the laptop: writes laptop.key/.crt, prints the public key
-microtunnel peer add laptop -c relay.yaml -public-key <hex> -endpoint relay.example.com:5040
+microtunnel peer add laptop -public-key <hex> -endpoint relay.example.com:5040
 #   -> picks the next free overlay IP (10.9.0.2), writes peers.d/laptop.yaml,
 #      and prints a ready-made config for the laptop; save it there as laptop.yaml
 
 # Or let the relay admin create everything (bundle of .key, .crt and .yaml to copy over)
-microtunnel peer add phone -c relay.yaml -generate -key-dir ./phone -endpoint relay.example.com:5040
+microtunnel peer add phone -generate -key-dir ./phone -endpoint relay.example.com:5040
 
-microtunnel peer list   -c relay.yaml          # name, allowed IPs, key, source (peers_dir or config)
-microtunnel peer remove laptop -c relay.yaml   # cut off immediately
+microtunnel peer list            # name, allowed IPs, key, source (peers_dir or config)
+microtunnel peer remove laptop   # cut off immediately
 ```
 
 What a reload does (also triggered by `kill -HUP <relay pid>`, which re-reads the whole peer list):
@@ -242,20 +244,20 @@ Verify it end to end with real TUN devices: `make dynamic-test` (relay starts em
 Set **`admin_socket`** on the relay and it serves a small JSON API on a unix socket (created with mode `0600`, so only its owner and root can use it). It is the safest way to manage a relay from tools or over SSH, because the relay itself allocates addresses (no race between two admins), applies changes **immediately**, and reports **live state**:
 
 ```yaml
-# relay.yaml
+# /etc/microtunnel/microtunnel.yaml
 admin_socket: /run/microtunnel/admin.sock   # the directory must exist (the packaged unit creates /run/microtunnel)
 public_endpoint: relay.example.com:5040     # handed to new peers as the address to dial
 ```
 
-The same `microtunnel peer ...` commands use it automatically when `-c relay.yaml` names a reachable `admin_socket`, or explicitly with `-socket`:
+The same `microtunnel peer ...` commands use it automatically when the config (`-c`, default `/etc/microtunnel/microtunnel.yaml`) names a reachable `admin_socket`, or explicitly with `-socket`:
 
 ```bash
-microtunnel peer list -c relay.yaml
+microtunnel peer list
 # NAME    ALLOWED IPS   STATE      ADDRESS            LAST SEEN  RX     TX     SOURCE
 # laptop  10.9.0.2/32   connected  198.51.100.7:40000 now        1.2MiB 3.4MiB peers_dir
 # phone   10.9.0.3/32   offline    -                  -          0B     0B     peers_dir
 
-microtunnel peer add laptop -c relay.yaml -generate -key-dir ./laptop   # key made locally; only the public half is sent
+microtunnel peer add laptop -generate -key-dir ./laptop   # key made locally; only the public half is sent
 ```
 
 **Managing a remote relay:** forward the socket over SSH and point the CLI at it; no extra port is opened and SSH is the authentication:
@@ -276,7 +278,7 @@ For many devices, run the enrollment service next to the relay. An admin creates
 
 ```bash
 # On the relay host (the service talks to the relay's admin socket):
-microtunnel enroll serve -c relay.yaml -tokens /var/lib/microtunnel/tokens \
+microtunnel enroll serve -tokens /var/lib/microtunnel/tokens \
   -tls-cert /etc/microtunnel/enroll.crt -tls-key /etc/microtunnel/enroll.key      # listens on :8443
 
 microtunnel enroll token create -tokens /var/lib/microtunnel/tokens -name laptop -ttl 1h \
@@ -285,9 +287,9 @@ microtunnel enroll token create -tokens /var/lib/microtunnel/tokens -name laptop
 #   On the new machine:  microtunnel join https://enroll.example.com -token mt1.3f9a....
 
 # On the new machine:
-microtunnel join https://enroll.example.com -token mt1.3f9a.... -dir /etc/microtunnel
+microtunnel join https://enroll.example.com -token mt1.3f9a....
 #   Enrolled as "laptop" with overlay address 10.9.0.2
-#   -> writes laptop.key (0600), laptop.crt and laptop.yaml; then: sudo microtunnel -c /etc/microtunnel/laptop.yaml
+#   -> writes laptop.key (0600), laptop.crt and laptop.yaml; then: sudo systemctl enable --now microtunnel@laptop
 ```
 
 `microtunnel enroll token list|revoke <id>` manage tokens. Properties:
