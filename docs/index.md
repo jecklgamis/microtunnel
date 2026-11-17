@@ -248,6 +248,38 @@ peers:
 
 A config needs at least one peer, either under `peers:` or as a file in `peers_dir`. The same public key may not appear twice.
 
+### Routing a network behind a peer
+
+Two separate settings decide where a packet goes:
+
+| | `tunnel_routes` | `allowed_ips` |
+|---|---|---|
+| Question | Should the OS send this into the tunnel? | Which peer gets it, and is the source allowed? |
+| Where | The node's own config | Each peer entry |
+| Layer | OS routing table | microtunnel's own lookup and filter |
+| Changes | Applied at startup; restart to change | Live (`peer add`, `peers.d`) |
+
+The overlay subnet (from `tunnel_address`) is routed automatically, so overlay-to-overlay traffic needs only `allowed_ips`. To reach a network that sits *behind* a peer, list it in **both** places. Example: peer-1 fronts a LAN `192.168.50.0/24`, and you want to reach it from peer-2.
+
+```yaml
+# peer-2: send the LAN into the tunnel
+tunnel_address: 10.9.0.3/24
+tunnel_routes: [192.168.50.0/24]
+peers:
+  - public_key: <relay-public-key>
+    endpoint: relay.example.com:5040
+    allowed_ips: [10.9.0.0/24, 192.168.50.0/24]   # accept replies from the LAN via the relay
+
+# relay: forward the LAN to peer-1 (peers.d/peer-1.yaml)
+allowed_ips: [10.9.0.2/32, 192.168.50.0/24]
+```
+
+Peer-1 itself needs IP forwarding enabled and a way back (a route on the LAN, or NAT). Notes:
+
+- `allowed_ips` never creates kernel routes, and routes are not added when a peer is added later. Add the CIDR to `tunnel_routes` and restart, or run `ip route add <cidr> dev <interface>` by hand.
+- WireGuard works the same way internally, but `wg-quick` derives its routes from `AllowedIPs` when the interface comes up, so there is one list instead of two.
+- Do not route `0.0.0.0/0`: it would also capture the packets to the relay and loop.
+
 ---
 
 ## Adding Peers Without a Restart

@@ -45,15 +45,17 @@ The relay is suited for low-to-moderate traffic between a small number of peers,
 X25519 key exchange with forward secrecy, AES-256-GCM, identity hiding, optional PSK, replay protection, per-peer AllowedIPs and automatic rekeying. Details, the handshake and the review notes are in [docs/security.md](docs/security.md); how it compares with WireGuard, OpenVPN and others is in [docs/comparison.md](docs/comparison.md).
 
 ### Limitations
-- **Linux and macOS** — Linux uses `/dev/net/tun`, macOS uses a `utun` device (see [Running Natively](#macos)). Windows and BSD are not supported. The whole test suite runs natively on both, since the tests use in-memory TUN devices
+- **Linux and macOS** — Linux uses `/dev/net/tun`, macOS uses a `utun` device (see [Running](#macos)). Windows and BSD are not supported. The whole test suite runs natively on both, since the tests use in-memory TUN devices
 - **IPv4 only** — TUN packets are validated as IPv4; IPv6 and non-IP traffic are dropped
 - **UDP transport** — no packet ordering guarantees; packet loss is not retransmitted
-- **Single-process** — a configurable pool of worker goroutines (`worker_threads`, default `min(4, nproc)`) parallelizes packet crypto across cores, but it's still one process per peer/relay with no multi-host failover
+- **Single-process** — a configurable pool of worker goroutines (`worker_threads`, default `min(4, nproc)`) parallelizes packet crypto across cores, but it is still one process per interface (one config, one TUN device) with no multi-host failover
+- **Hub-and-spoke only** — peer-to-peer traffic always goes through the relay; there are no direct connections or NAT traversal between peers
+- **Routes are static** — `tunnel_routes` are applied once at startup, and `allowed_ips` never create kernel routes, so a network behind a peer needs both (see [Routing a network behind a peer](docs/index.md#routing-a-network-behind-a-peer))
 - **Not audited** — not hardened for production use
 
 ## Requirements
 
-**To run:** Linux with `iproute2` (for the helper script that creates the TUN interface), or macOS 12+ (no extra tools; see below). The binary is a static Go executable — no OpenSSL, libyaml or libc version requirements.
+**To run:** Linux with `iproute2` (the binary shells out to `ip` to address the TUN interface and add routes), or macOS 12+ (no extra tools; see below). The binary is a static Go executable — no OpenSSL, libyaml or libc version requirements.
 
 **To build:** Go 1.26+ and `make`. Docker is optional (image builds, running the tests on Linux, local end-to-end testing).
 
@@ -61,7 +63,7 @@ X25519 key exchange with forward secrecy, AES-256-GCM, identity hiding, optional
 sudo apt install iproute2 make   # plus Go 1.26+ from https://go.dev/dl/
 ```
 
-## Running Natively
+## Running
 
 Install the package, then configure each machine with `microtunnel init`. This walkthrough sets up one relay and one peer. A peer is any machine behind NAT that dials out to the relay; the same program is both, and the config decides the role.
 
