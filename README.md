@@ -305,66 +305,23 @@ Verify it all with real TUN devices: `make enroll-test`.
 
 ## Running With Docker
 
-**Setup (once):**
+The easiest way to try it on one machine: a relay and two peers in containers, each with its own network namespace. Build the image once, then start each container in its own terminal:
+
 ```bash
 make image
-```
-
-**Local testing (all on one machine — 3 terminals):**
-
-All three containers join a shared `microtunnel-net` Docker network; the peer scripts resolve the relay by its container name automatically, so no config editing is needed for this local flow.
-
-```bash
 ./scripts/run-relay-in-docker.sh
 ./scripts/run-peer-1-in-docker.sh
 ./scripts/run-peer-2-in-docker.sh
 ```
 
-**Testing the tunnel:**
+Then test the tunnel:
+
 ```bash
 ./scripts/test-tunnel-using-peer-1.sh       # ping + curl peer-2 from peer-1
-./scripts/test-tunnel-using-peer-2.sh       # ping + curl peer-1 from peer-2
-./scripts/test-tunnel-relay.sh              # ping + curl both peers from relay
+curl http://localhost:15052                 # peer-1's Envoy HTTP proxy -> tunnel -> peer-2's nginx
 ```
 
-### Port Mapping
-
-| Service | Container port | relay host | peer-1 host | peer-2 host |
-|---------|---------------|------------|-------------|-------------|
-| UDP tunnel | 5040 | 5040 | 5042 | 5043 |
-| nginx | 80 | — | — | — |
-| Envoy TCP proxy | 15040 | — | 15042 | 15043 |
-| Envoy HTTP proxy | 15050 | — | 15052 | 15053 |
-| Envoy admin | 9901 | 9901 | 9902 | 9903 |
-
-### Envoy Proxy
-
-Each peer container includes an [Envoy](https://www.envoyproxy.io/) proxy. When `ENVOY_UPSTREAM_HOST` is set, Envoy starts and forwards connections to the configured upstream.
-
-Two listeners:
-
-| Listener | Port | Mode |
-|----------|------|------|
-| TCP proxy | 15040 | L4 pass-through |
-| HTTP proxy | 15050 | L7 with connection pooling (~130 req/connection) |
-| Admin | 9901 | HTTP stats |
-
-```bash
-curl http://localhost:15052   # HTTP proxy through peer-1 → peer-2's nginx
-curl http://localhost:15042   # TCP proxy
-curl http://localhost:9902/stats  # Envoy admin
-```
-
-### Docker Environment Variables
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `TUNNEL_NAME` | `microtunnel0` | TUN interface name |
-| `PEER_IP` | `10.9.0.1/24` | This peer's overlay IP/CIDR |
-| `PEER_ROUTES` | _(none)_ | Space-separated extra CIDRs to route via TUN |
-| `PEER_CONFIG` | `peer.yaml` | Path to YAML config file inside container |
-| `ENVOY_UPSTREAM_HOST` | — | Upstream host for Envoy; if unset, Envoy is not started |
-| `ENVOY_UPSTREAM_PORT` | `80` | Upstream port for Envoy |
+`./scripts/test-tunnel-using-peer-2.sh` and `./scripts/test-tunnel-relay.sh` check the other directions. A multi-arch image (amd64 and arm64) is published as `jecklgamis/microtunnel`. Ports, the Envoy proxy and the container environment variables are in [docs/docker.md](docs/docker.md).
 
 ## Development
 
@@ -400,12 +357,6 @@ Layout:
 | `internal/logx` | timestamped logger |
 
 The `peer` tests run complete relay/peer topologies inside one process over loopback UDP with in-memory TUN devices, so rekeying, expiry, roaming and spoofing are all exercised without privileges.
-
-## Request Path
-
-Example request path for `curl http://<host_ip>:15052` against peer-1, routed through the tunnel to peer-2's nginx:
-
-![curl request path](docs/images/curl-request-path.png)
 
 ## References
 * https://www.kernel.org/doc/Documentation/networking/tuntap.txt
