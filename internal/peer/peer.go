@@ -317,6 +317,12 @@ func (p *Peer) handleData(src netip.AddrPort, pkt []byte, now time.Time, w *work
 	s := t.findByAddr(src)
 	if s == nil {
 		t.mu.RUnlock()
+		// No session at this address: it may be a peer's first packet under a
+		// key it just negotiated (including after roaming to a new address).
+		if p.confirmCandidate(src, pkt, now, w) {
+			p.handleData(src, pkt, now, w)
+			return
+		}
 		p.lim.Warnf("unknown-peer", "Packet from unknown peer %s — dropping", src)
 		return
 	}
@@ -360,6 +366,12 @@ func (p *Peer) handleData(src netip.AddrPort, pkt []byte, now time.Time, w *work
 	switch {
 	case !decOK:
 		t.mu.RUnlock()
+		// Not the current or previous key: the peer may have switched to the
+		// key from a handshake we answered but have not yet confirmed.
+		if p.confirmCandidate(src, pkt, now, w) {
+			p.handleData(src, pkt, now, w)
+			return
+		}
 		p.lim.Warnf("decrypt", "Decrypt failed from %s — dropping", src)
 		return
 	case !headerOK:
@@ -444,6 +456,9 @@ func (p *Peer) handleHandshake(src netip.AddrPort, pkt []byte, now time.Time) {
 		}
 		_ = t.sessionInit(s, src, cfg.pub, key, cfg, true, now)
 		p.printSessionsLocked()
+		// The responder keeps our old session until a packet authenticates under
+		// the new key, so send one right away instead of waiting for traffic.
+		p.forward(s, nil, new(workerBufs))
 		return
 	}
 
@@ -508,18 +523,72 @@ func (p *Peer) handleHandshake(src netip.AddrPort, pkt []byte, now time.Time) {
 		p.lim.Warnf("cooldown-key", "Handshake cooldown for peer key — ignoring")
 		return
 	}
-	s := t.alloc(peerPub, src)
-	if s == nil {
+	if !t.canAlloc(peerPub, src) {
 		logx.Warnf("Session table full — rejecting %s", src)
 		return
 	}
-	// Install the session before answering, so the peer's first data packet
-	// can never race ahead of it.
-	_ = t.sessionInit(s, src, peerPub, key, cfg, false, now)
+	// Hold the key as a candidate before answering, so the peer's first data
+	// packet can never race ahead of it. The session itself (key, address)
+	// changes only once that packet proves the initiator holds its static key;
+	// see candidate and confirmCandidate.
+	if err := t.addCandidate(peerPub, src, key, now); err != nil {
+		logx.Errorf("Handshake from %s: %v", src, err)
+		return
+	}
 	if _, err := p.conn.WriteToUDPAddrPort(resp, src); err != nil {
 		logx.Errorf("sendto() handshake response failed: %v", err)
 	}
+}
+
+// confirmCandidate promotes an unconfirmed handshake key to the peer's live
+// session when pkt, received from src, authenticates under it. It reports
+// whether it did; the caller then processes pkt again against the new session.
+func (p *Peer) confirmCandidate(src netip.AddrPort, pkt []byte, now time.Time, w *workerBufs) bool {
+	t := &p.tbl
+	var (
+		pub  [proto.PubKeyLen]byte
+		key  [proto.KeyLen]byte
+		hit  bool
+		slot int
+	)
+	t.mu.RLock()
+	for i := range t.cands {
+		c := &t.cands[i]
+		if !c.active || c.addr != src || now.Sub(c.created) > candidateTTL {
+			continue
+		}
+		plain, err := proto.Open(c.aead, w.plain[:0], pkt)
+		if err == nil && len(plain) >= proto.HeaderSize+proto.SeqSize &&
+			[proto.HeaderSize]byte(plain[:proto.HeaderSize]) == proto.Header {
+			pub, key, hit, slot = c.pub, c.key, true, i
+			break
+		}
+	}
+	t.mu.RUnlock()
+	if !hit {
+		return false
+	}
+
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if c := &t.cands[slot]; !c.active || c.key != key {
+		return false // replaced or confirmed by another worker meanwhile
+	}
+	cfg := p.findPeerConfig(pub)
+	if cfg == nil { // the peer was removed while its handshake was in flight
+		t.dropCandidates(pub)
+		return false
+	}
+	s := t.alloc(pub, src)
+	if s == nil {
+		logx.Warnf("Session table full — dropping confirmed handshake from %s", src)
+		t.dropCandidates(pub)
+		return false
+	}
+	_ = t.sessionInit(s, src, pub, key, cfg, false, now)
+	t.dropCandidates(pub)
 	p.printSessionsLocked()
+	return true
 }
 
 // refreshPrecomp (re)generates the pre-computed ephemeral key if none is

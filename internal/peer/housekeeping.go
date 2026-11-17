@@ -87,6 +87,13 @@ func (p *Peer) housekeep(ctx context.Context, now time.Time, w *workerBufs) {
 		}
 	}
 
+	// Forget handshake keys whose initiator never confirmed them.
+	for i := range t.cands {
+		if c := &t.cands[i]; c.active && now.Sub(c.created) > candidateTTL {
+			t.cands[i] = candidate{}
+		}
+	}
+
 	// Expire sessions that have been silent for too long.
 	for i := 0; i < t.slots; i++ {
 		s := &t.sessions[i]

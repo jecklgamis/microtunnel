@@ -80,12 +80,44 @@ type pendingHS struct {
 	serverAddr netip.AddrPort
 }
 
+// candidate is a session key negotiated by an inbound handshake whose
+// initiator has not yet proven it holds the static private key it claimed.
+//
+// An initiation carries only public values (and, when configured, an HMAC under
+// the shared pre-shared key), so anyone who knows a peer's public key and can
+// replay or forge one can make us run the handshake. Installing that key and
+// address immediately would let such a packet displace a live session (and
+// point the peer's traffic at the sender), so the responder keeps the old
+// session untouched and promotes the candidate only when a data packet from the
+// handshake's source address decrypts under it. The session key mixes in
+// DH(static_initiator, eph_responder), which only the real initiator can
+// compute, so a successful decrypt is that proof.
+type candidate struct {
+	active  bool
+	pub     [proto.PubKeyLen]byte
+	addr    netip.AddrPort
+	key     [proto.KeyLen]byte
+	aead    cipher.AEAD
+	created time.Time
+}
+
+const (
+	// candidateTTL is how long an unconfirmed key waits for its first packet.
+	// A Go initiator confirms within one round trip; the original C
+	// implementation only after its next packet or keepalive.
+	candidateTTL = 90 * time.Second
+	// maxCandidatesPerPeer bounds unconfirmed keys held per peer, so a flood of
+	// initiations cannot evict a genuine one before it confirms.
+	maxCandidatesPerPeer = 8
+)
+
 // table is the session table: a flat array (max MaxPeers) guarded by an RWMutex.
 type table struct {
 	mu       sync.RWMutex
 	sessions [MaxPeers]session
 	slots    int
 	pending  [MaxPeers]pendingHS
+	cands    [maxCandidatesPerPeer * MaxPeers]candidate
 
 	// prevGrace is how long the previous key is kept as a decrypt fallback
 	// after a rekey (set from prev_key_grace; used by sessionInit).
@@ -141,6 +173,67 @@ func (t *table) alloc(pub [proto.PubKeyLen]byte, addr netip.AddrPort) *session {
 	s := &t.sessions[t.slots]
 	t.slots++
 	return s
+}
+
+// canAlloc reports whether alloc would find or create a slot for the peer. It
+// does not modify the table.
+func (t *table) canAlloc(pub [proto.PubKeyLen]byte, addr netip.AddrPort) bool {
+	if t.findByPub(pub) != nil || t.findByAddr(addr) != nil || t.slots < MaxPeers {
+		return true
+	}
+	for i := 0; i < t.slots; i++ {
+		if !t.sessions[i].active {
+			return true
+		}
+	}
+	return false
+}
+
+// addCandidate records an unconfirmed key for pub. Requires the write lock.
+func (t *table) addCandidate(pub [proto.PubKeyLen]byte, addr netip.AddrPort,
+	key [proto.KeyLen]byte, now time.Time) error {
+	aead, err := proto.NewAEAD(key[:])
+	if err != nil {
+		return err
+	}
+	var slot, oldestOfPub, oldest = -1, -1, -1
+	n := 0
+	for i := range t.cands {
+		c := &t.cands[i]
+		live := c.active && now.Sub(c.created) <= candidateTTL
+		if !live {
+			if slot < 0 {
+				slot = i
+			}
+			continue
+		}
+		if oldest < 0 || c.created.Before(t.cands[oldest].created) {
+			oldest = i
+		}
+		if c.pub == pub {
+			n++
+			if oldestOfPub < 0 || c.created.Before(t.cands[oldestOfPub].created) {
+				oldestOfPub = i
+			}
+		}
+	}
+	switch {
+	case n >= maxCandidatesPerPeer:
+		slot = oldestOfPub
+	case slot < 0:
+		slot = oldest
+	}
+	t.cands[slot] = candidate{active: true, pub: pub, addr: addr, key: key, aead: aead, created: now}
+	return nil
+}
+
+// dropCandidates forgets every unconfirmed key for pub. Requires the write lock.
+func (t *table) dropCandidates(pub [proto.PubKeyLen]byte) {
+	for i := range t.cands {
+		if t.cands[i].pub == pub {
+			t.cands[i] = candidate{}
+		}
+	}
 }
 
 // routeLookup returns the active session whose AllowedIPs contain dstIP using

@@ -1,0 +1,29 @@
+# POST a ~2 KB JSON body to the HTTP echo service on port 8080 of the relay
+# (10.9.0.1), straight through the tunnel (no Envoy). Run from a host that
+# has a route to the overlay, e.g. the Mac running microtunnel:
+#   resonate run perf-tests/json-2k-8080.yaml   (from the repo root)
+protocol: http
+
+load:
+  stages:
+    - { duration: 5s,  workers: 400,  rate: 1000 }
+    - { duration: 15s, workers: 400,  rate: 1000 }
+    - { duration: 5s,  workers: 400,  rate: 2000 }
+    - { duration: 15s, workers: 400,  rate: 2000 }
+    - { duration: 5s,  workers: 1000, rate: 4000 }
+    - { duration: 15s, workers: 1000, rate: 4000 }
+    - { duration: 5s,  workers: 1000, rate: 8000 }
+    - { duration: 15s, workers: 1000, rate: 8000 }
+    - { duration: 5s,  workers: 1000, rate: 12000 }
+    - { duration: 15s, workers: 1000, rate: 12000 }
+
+http:
+  timeout: 5s
+  max_idle_conns: 2000
+  targets:
+    - method: POST
+      url: http://10.9.0.1:8080/
+      headers:
+        Content-Type: application/json
+        User-Agent: resonate-load-gen
+      raw_body_file: perf-tests/payload-2k.json   # sent byte-for-byte; path is relative to the repo root

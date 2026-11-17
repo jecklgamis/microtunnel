@@ -56,6 +56,13 @@ func (e *hsEnv) finish(t *testing.T, resp []byte, st *proto.ClientState) [proto.
 	return key
 }
 
+// confirm plays the initiator's first packet under key (a keepalive), which is
+// what promotes the responder's pending handshake key to a live session.
+func (e *hsEnv) confirm(t *testing.T, from netip.AddrPort, key [proto.KeyLen]byte, seq uint64) {
+	t.Helper()
+	e.relay.handleUDP(from, wirePacket(t, key, seq, nil), new(workerBufs))
+}
+
 func (e *hsEnv) readResponse(t *testing.T) []byte {
 	t.Helper()
 	_ = e.clientConn.SetReadDeadline(time.Now().Add(time.Second))
@@ -80,6 +87,10 @@ func TestInboundHandshakeEstablishesSession(t *testing.T) {
 			e.relay.handleUDP(e.clientAddr, msg, new(workerBufs)) // dispatches by size+magic
 
 			clientKey := e.finish(t, e.readResponse(t), st)
+			if _, ok := e.relay.sessionKey(pubOf(e.clientKey)); ok {
+				t.Fatal("session installed before the initiator proved its identity")
+			}
+			e.confirm(t, e.clientAddr, clientKey, 0)
 			serverKey, ok := e.relay.sessionKey(pubOf(e.clientKey))
 			if !ok {
 				t.Fatal("no session created")
@@ -109,6 +120,8 @@ func TestInboundHandshakeThenDataFlows(t *testing.T) {
 	e.relay.handleUDP(e.clientAddr, msg, new(workerBufs))
 	key := e.finish(t, e.readResponse(t), st)
 
+	// The first data packet under the negotiated key both confirms the
+	// handshake and is delivered.
 	pkt := ipv4("10.9.0.2", "10.9.0.1", []byte("post-handshake"))
 	dev := e.relay.dev.(*fakeDev)
 	e.relay.handleUDP(e.clientAddr, wirePacket(t, key, 0, pkt), new(workerBufs))
@@ -174,6 +187,7 @@ func TestHandshakeCooldownIgnoresRapidRepeat(t *testing.T) {
 	msg, st := e.initiate(t)
 	e.relay.handleHandshake(e.clientAddr, msg, time.Now())
 	first := e.finish(t, e.readResponse(t), st)
+	e.confirm(t, e.clientAddr, first, 0)
 
 	// An immediate second initiation (replayed, or a flood) is within the 5s cooldown.
 	msg2, _ := e.initiate(t)
@@ -189,6 +203,7 @@ func TestHandshakeCooldownByPublicKeyAcrossAddresses(t *testing.T) {
 	msg, st := e.initiate(t)
 	e.relay.handleHandshake(e.clientAddr, msg, time.Now())
 	first := e.finish(t, e.readResponse(t), st)
+	e.confirm(t, e.clientAddr, first, 0)
 
 	// Same key from a different source address immediately afterwards: blocked
 	// by the per-key cooldown (the per-address check can't see it).
@@ -207,6 +222,7 @@ func TestRekeyAfterCooldownKeepsPreviousKey(t *testing.T) {
 	msg, st := e.initiate(t)
 	e.relay.handleHandshake(e.clientAddr, msg, time.Now())
 	first := e.finish(t, e.readResponse(t), st)
+	e.confirm(t, e.clientAddr, first, 0)
 
 	msg2, st2 := e.initiate(t)
 	e.relay.handleHandshake(e.clientAddr, msg2, time.Now())
@@ -214,12 +230,19 @@ func TestRekeyAfterCooldownKeepsPreviousKey(t *testing.T) {
 	if first == second {
 		t.Fatal("rekey produced the same session key")
 	}
+	// Until the initiator uses the new key, the live session is untouched.
+	if k, _ := e.relay.sessionKey(pubOf(e.clientKey)); k != first {
+		t.Fatal("rekey replaced the session key before it was confirmed")
+	}
+	e.confirm(t, e.clientAddr, second, 0)
 
 	e.relay.tbl.mu.RLock()
 	defer e.relay.tbl.mu.RUnlock()
 	s := e.relay.tbl.findByPub(pubOf(e.clientKey))
-	if !s.prevKeyActive || s.prevKey != first || s.key != second {
-		t.Fatal("responder must keep the old key as a decrypt fallback")
+	// (The confirming packet is the first under the new key, which retires the
+	// old key's fallback status, as for any rekey.)
+	if s.prevKey != first || s.key != second {
+		t.Fatal("responder must keep the old key as the previous key")
 	}
 	if e.relay.tbl.slots != 1 {
 		t.Fatalf("rekey consumed a new slot (slots=%d)", e.relay.tbl.slots)
@@ -231,7 +254,8 @@ func TestHandshakeFromNewAddressRoams(t *testing.T) {
 	e.relay.hsCooldown = 0
 	msg, st := e.initiate(t)
 	e.relay.handleHandshake(e.clientAddr, msg, time.Now())
-	e.finish(t, e.readResponse(t), st)
+	first := e.finish(t, e.readResponse(t), st)
+	e.confirm(t, e.clientAddr, first, 0)
 
 	// The client's NAT mapping changed: same key now arrives from a new port.
 	moved := listenLoopback(t)
@@ -243,7 +267,14 @@ func TestHandshakeFromNewAddressRoams(t *testing.T) {
 	if err != nil {
 		t.Fatalf("no response at the new address: %v", err)
 	}
-	e.finish(t, buf[:n], st2)
+	second := e.finish(t, buf[:n], st2)
+	e.relay.tbl.mu.RLock()
+	stillOld := e.relay.tbl.findByAddr(e.clientAddr) != nil
+	e.relay.tbl.mu.RUnlock()
+	if !stillOld {
+		t.Fatal("session re-homed before the new address proved itself")
+	}
+	e.confirm(t, addrOf(moved), second, 0)
 
 	e.relay.tbl.mu.RLock()
 	defer e.relay.tbl.mu.RUnlock()
@@ -489,6 +520,10 @@ func TestRekeyCollisionLowerKeyYields(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if cur, _ := a.sessionKey(pubOf(bk)); cur != before {
+		t.Fatal("loser switched keys before the winner's first packet confirmed the handshake")
+	}
+	a.handleUDP(addrOf(bConn), wirePacket(t, bKey, 0, nil), new(workerBufs))
 	after, _ := a.sessionKey(pubOf(bk))
 	if after == before || after != bKey {
 		t.Fatal("loser did not adopt the winner's session key")

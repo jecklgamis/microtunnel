@@ -63,10 +63,11 @@ func TestReloadAddsPeerWhichThenHandshakes(t *testing.T) {
 		t.Fatalf("result=%+v", res)
 	}
 
-	clientKey, ok, _ := strangerHandshake(t, e.relay, e.relayKey, newcomer)
+	clientKey, ok, env := strangerHandshake(t, e.relay, e.relayKey, newcomer)
 	if !ok {
 		t.Fatal("added peer got no handshake response")
 	}
+	env.confirm(t, env.clientAddr, clientKey, 0)
 	serverKey, found := e.relay.sessionKey(pubOf(newcomer))
 	if !found || serverKey != clientKey {
 		t.Fatal("added peer's session not established with matching key")
@@ -80,10 +81,11 @@ func TestReloadRemovedPeerIsCutOffButOthersSurvive(t *testing.T) {
 		{key: b, allowed: []string{"10.9.0.3/32"}},
 	}})
 	keyA, okA, envA := strangerHandshake(t, relay, relayKey, a)
-	keyB, okB, _ := strangerHandshake(t, relay, relayKey, b)
+	keyB, okB, envB := strangerHandshake(t, relay, relayKey, b)
 	if !okA || !okB {
 		t.Fatal("setup handshakes failed")
 	}
+	envB.confirm(t, envB.clientAddr, keyB, 0) // A is confirmed by its first data packet below
 	pkt := ipv4("10.9.0.2", "10.9.0.1", []byte("before"))
 	relay.handleUDP(envA.clientAddr, wirePacket(t, keyA, 0, pkt), new(workerBufs))
 	if got := dev.expect(t, time.Second); !bytes.Equal(got, pkt) {
