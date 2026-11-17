@@ -20,7 +20,7 @@ SOCK=/tmp/admin.sock   # container-local (a bind-mounted host dir on Docker Desk
 
 step() { printf '\n=== %s\n' "$*"; }
 fail() { echo "FAIL: $*" >&2; exit 1; }
-dk() { docker run --rm -v "$WORK:/data" --entrypoint "$BIN" "$IMAGE" "$@"; }
+dk() { docker run --rm --user "$(id -u):$(id -g)" -v "$WORK:/data" --entrypoint "$BIN" "$IMAGE" "$@"; }
 mt() { docker exec "$P-relay" "$BIN" "$@"; }
 
 cleanup() {
@@ -28,6 +28,8 @@ cleanup() {
   docker network rm "$NET" >/dev/null 2>&1 || true
   docker run --rm -v "$ROOT/build:/b" --entrypoint rm "$IMAGE" -rf /b/init-test >/dev/null 2>&1 || true
 }
+# Create build/ ourselves: if docker has to, it makes it root-owned on Linux and we could not write to it.
+mkdir -p "$ROOT/build"
 trap cleanup EXIT
 cleanup
 mkdir -p "$WORK"
@@ -83,7 +85,7 @@ join_peer() { # name
   echo "$name ($ip) -> relay: OK"
   eval "IP_$name=$ip"
 }
-dk_env() { docker run --rm -e MICROTUNNEL_PSK -v "$WORK:/data" --entrypoint "$BIN" "$IMAGE" "$@"; }
+dk_env() { docker run --rm --user "$(id -u):$(id -g)" -e MICROTUNNEL_PSK -v "$WORK:/data" --entrypoint "$BIN" "$IMAGE" "$@"; }
 
 join_peer p1
 join_peer p2

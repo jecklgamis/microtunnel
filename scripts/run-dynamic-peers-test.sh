@@ -17,7 +17,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 WORK="$ROOT/build/dyn-test"
 BIN=/microtunnel/microtunnel
 
-dk() { docker run --rm -v "$WORK:/data" --entrypoint "$BIN" "$IMAGE" "$@"; }
+dk() { docker run --rm --user "$(id -u):$(id -g)" -v "$WORK:/data" --entrypoint "$BIN" "$IMAGE" "$@"; }
 step() { printf '\n=== %s\n' "$*"; }
 fail() { echo "FAIL: $*" >&2; exit 1; }
 relay_log() { docker logs "$P-relay" 2>&1; }
@@ -27,6 +27,8 @@ cleanup() {
   docker network rm "$NET" >/dev/null 2>&1 || true
   docker run --rm -v "$ROOT/build:/b" --entrypoint rm "$IMAGE" -rf /b/dyn-test >/dev/null 2>&1 || true
 }
+# Create build/ ourselves: if docker has to, it makes it root-owned on Linux and we could not write to it.
+mkdir -p "$ROOT/build"
 trap cleanup EXIT
 cleanup
 mkdir -p "$WORK/peers.d"
