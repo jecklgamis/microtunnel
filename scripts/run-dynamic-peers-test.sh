@@ -67,7 +67,7 @@ wait_for "relay to start watching peers_dir" 20 relay_says "Watching peers_dir"
 STARTED=$(docker inspect -f '{{.State.StartedAt}}' "$P-relay")
 
 step "peer add alice -generate (the CLI creates her key pair and config)"
-dk peer add alice -c /data/relay.yaml -generate -key-dir /data/alice -endpoint "$P-relay:5040" | head -3
+dk peer add alice -c /data/relay.yaml -generate -key-dir /data/alice -endpoint "$P-relay:5040" | sed -n 1,3p
 wait_for "relay to load alice" 15 relay_says "Peer added"
 start_peer alice /data/alice /data/alice/alice.yaml
 wait_for "alice to reach the relay (10.9.0.1)" 40 ping_ok alice 10.9.0.1

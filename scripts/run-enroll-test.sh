@@ -72,10 +72,10 @@ YAML
 start relay /data /data/relay.yaml
 wait_for "admin API" 20 relay_says "Admin API listening"
 STARTED=$(docker inspect -f '{{.State.StartedAt}}' "$P-relay")
-mt peer list -socket "$SOCK" | head -2
+mt peer list -socket "$SOCK" | sed -n 1,2p
 
 step "carol: peer add -generate through the admin socket"
-mt peer add carol -socket "$SOCK" -generate -key-dir /data/carol | head -3
+mt peer add carol -socket "$SOCK" -generate -key-dir /data/carol | sed -n 1,3p
 relay_says "Admin API: registered peer carol" || fail "relay did not log the registration"
 start carol /data/carol /data/carol/carol.yaml
 wait_for "carol to reach the relay" 40 ping_ok carol 10.9.0.1
@@ -85,7 +85,7 @@ step "enrollment service beside the relay, then a self-service join for dave"
 docker exec -d "$P-relay" "$BIN" enroll serve -socket "$SOCK" -tokens /data/tokens -insecure-http -listen :8443
 wait_for "enrollment service" 20 docker run --rm --network "$NET" --entrypoint curl "$IMAGE" -fsS "http://$P-relay:8443/healthz"
 TOKEN_OUT=$(mt enroll token create -tokens /data/tokens -name dave -ttl 10m)
-TOKEN=$(echo "$TOKEN_OUT" | grep -o 'mt1\.[0-9a-f]\{16\}\.[A-Za-z0-9_-]*' | head -1)
+TOKEN=$(echo "$TOKEN_OUT" | grep -o 'mt1\.[0-9a-f]\{16\}\.[A-Za-z0-9_-]*' | sed -n 1p)
 [ -n "$TOKEN" ] || fail "no token printed"
 T0=$SECONDS
 docker run --rm --network "$NET" --user "$(id -u):$(id -g)" -v "$WORK:/data" --entrypoint "$BIN" "$IMAGE" \
