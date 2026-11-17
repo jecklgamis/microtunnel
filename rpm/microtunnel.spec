@@ -35,10 +35,10 @@ install -m 644 %{_sourcedir}/rpm/systemd/microtunnel-relay.service    %{buildroo
 install -m 644 %{_sourcedir}/rpm/systemd/microtunnel-peer.service      %{buildroot}/usr/lib/systemd/system/
 install -m 644 %{_sourcedir}/rpm/systemd/microtunnel-peer-1.service   %{buildroot}/usr/lib/systemd/system/
 install -m 644 %{_sourcedir}/rpm/systemd/microtunnel-peer-2.service   %{buildroot}/usr/lib/systemd/system/
-install -m 640 %{_sourcedir}/config/relay.yaml   %{buildroot}/etc/microtunnel/relay.yaml
-install -m 640 %{_sourcedir}/config/peer.yaml    %{buildroot}/etc/microtunnel/peer.yaml
-install -m 640 %{_sourcedir}/config/peer-1.yaml  %{buildroot}/etc/microtunnel/peer-1.yaml
-install -m 640 %{_sourcedir}/config/peer-2.yaml  %{buildroot}/etc/microtunnel/peer-2.yaml
+install -m 640 %{_sourcedir}/packaging/config/relay.yaml   %{buildroot}/etc/microtunnel/relay.yaml
+install -m 640 %{_sourcedir}/packaging/config/peer.yaml    %{buildroot}/etc/microtunnel/peer.yaml
+install -m 640 %{_sourcedir}/packaging/config/peer-1.yaml  %{buildroot}/etc/microtunnel/peer-1.yaml
+install -m 640 %{_sourcedir}/packaging/config/peer-2.yaml  %{buildroot}/etc/microtunnel/peer-2.yaml
 
 %files
 /usr/bin/microtunnel
@@ -60,7 +60,11 @@ install -m 640 %{_sourcedir}/config/peer-2.yaml  %{buildroot}/etc/microtunnel/pe
 systemctl daemon-reload
 echo "Microtunnel installed."
 echo ""
-echo "Edit configs in /etc/microtunnel/, then enable the appropriate service:"
+echo "The configs in /etc/microtunnel/ are TEMPLATES with <placeholders>; the services will not"
+echo "start until you fill them in. First create this machine's key pair:"
+echo "  sudo microtunnel keygen <relay|peer|peer-1|peer-2> -dir /etc/microtunnel"
+echo ""
+echo "Then edit the matching config and enable the appropriate service:"
 echo "  systemctl enable --now microtunnel-relay    # on the relay machine"
 echo "  systemctl enable --now microtunnel-peer     # on a generic peer machine"
 echo "  systemctl enable --now microtunnel-peer-1   # on peer-1 machine"

@@ -2,8 +2,10 @@ package config
 
 import (
 	"fmt"
+	"github.com/jecklgamis/microtunnel/internal/proto"
 	"os"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"strings"
 	"testing"
@@ -457,6 +459,101 @@ func TestAdminSocketAndPublicEndpoint(t *testing.T) {
 	for _, bad := range []string{"nohostport", "host:0", "host:99999", ":5040"} {
 		if _, err := Parse([]byte(minimalYAML + "public_endpoint: " + bad + "\n")); err == nil {
 			t.Errorf("public_endpoint %q should be rejected", bad)
+		}
+	}
+}
+
+func TestDemoKeysMatchTheCommittedFiles(t *testing.T) {
+	// demoKeys must describe exactly the key pairs checked in under config/.
+	for _, name := range []string{"relay", "peer-1", "peer-2"} {
+		pub, err := proto.LoadPublicKey(filepath.Join("..", "..", "config", name+".crt"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		got, ok := DemoKeyName(pub)
+		if !ok || got != name {
+			t.Errorf("config/%s.crt (%x) is not listed as demo key %q (got %q, %v)", name, pub[:4], name, got, ok)
+		}
+	}
+	if len(demoKeys) != 3 {
+		t.Errorf("demoKeys has %d entries, want 3", len(demoKeys))
+	}
+}
+
+func TestWarningsFlagPlaceholdersAndDemoKeys(t *testing.T) {
+	demo, _ := Parse([]byte("interface: t0\npre_shared_key: some-psk\npeers:\n  - public_key: ba54232056ec3b8ff1982904345cea131293ca5daff441d11a23c010c0528442\n"))
+	w := demo.Warnings()
+	if len(w) != 2 || !strings.Contains(w[0], "some-psk") || !strings.Contains(w[1], `"peer-1"`) {
+		t.Fatalf("warnings = %q", w)
+	}
+	const realKey = "0000000000000000000000000000000000000000000000000000000000000001"
+	if w := mustParse(t, "interface: t0\npre_shared_key: change-me\npeers:\n  - public_key: "+realKey+"\n").Warnings(); len(w) != 1 || !strings.Contains(w[0], "change-me") {
+		t.Fatalf("change-me should give exactly the placeholder warning: %q", w)
+	}
+	// A real configuration is silent.
+	clean := mustParse(t, "interface: t0\npre_shared_key: 8f3k29xv-long-random-secret\npeers:\n  - public_key: 0000000000000000000000000000000000000000000000000000000000000001\n")
+	if w := clean.Warnings(); len(w) != 0 {
+		t.Fatalf("unexpected warnings: %q", w)
+	}
+	// No PSK at all is not a placeholder warning (main warns about that separately).
+	if w := mustParse(t, "interface: t0\npeers:\n  - public_key: 0000000000000000000000000000000000000000000000000000000000000001\n").Warnings(); len(w) != 0 {
+		t.Fatalf("unexpected warnings: %q", w)
+	}
+}
+
+func mustParse(t *testing.T, y string) *Config {
+	t.Helper()
+	c, err := Parse([]byte(y))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return c
+}
+
+func TestPackagedTemplatesAreSafePlaceholders(t *testing.T) {
+	files, err := filepath.Glob(filepath.Join("..", "..", "packaging", "config", "*.yaml"))
+	if err != nil || len(files) != 4 {
+		t.Fatalf("expected the 4 packaged templates, got %v (%v)", files, err)
+	}
+	keyPlaceholder := regexp.MustCompile(`<[a-z0-9-]*public-key-hex>`)
+	anyPlaceholder := regexp.MustCompile(`<[^>\n]+>`)
+	for _, f := range files {
+		raw, err := os.ReadFile(f)
+		if err != nil {
+			t.Fatal(err)
+		}
+		text := string(raw)
+		// No secrets, demo identities or well-known values may ship in a package.
+		for hexKey := range demoKeys {
+			if strings.Contains(text, hexKey) {
+				t.Errorf("%s contains a demo public key", f)
+			}
+		}
+		for _, psk := range placeholderPSKs {
+			if strings.Contains(text, "pre_shared_key: "+psk) {
+				t.Errorf("%s ships the well-known pre-shared key %q", f, psk)
+			}
+		}
+		// As shipped it must NOT load: the service cannot start until the
+		// administrator has replaced the placeholders.
+		if _, err := Parse(raw); err == nil {
+			t.Errorf("%s loads as-is; an untouched template must not run", f)
+		}
+		// Once the placeholders are filled in with real-looking values it must be valid.
+		n := 0
+		filled := keyPlaceholder.ReplaceAllStringFunc(text, func(string) string {
+			n++ // distinct keys: duplicates are rejected
+			return fmt.Sprintf("%064x", 0xa0+n)
+		})
+		filled = strings.ReplaceAll(filled, "<relay-host-or-ip>", "relay.example.com")
+		filled = anyPlaceholder.ReplaceAllStringFunc(filled, func(string) string { return "filled-in-value" })
+		cfg, err := Parse([]byte(filled))
+		if err != nil {
+			t.Errorf("%s is not a valid config once filled in: %v\n%s", f, err, filled)
+			continue
+		}
+		if len(cfg.Peers) == 0 {
+			t.Errorf("%s has no peers once filled in", f)
 		}
 	}
 }

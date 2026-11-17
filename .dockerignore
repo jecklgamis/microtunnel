@@ -1,0 +1,8 @@
+# Keep key material and build output out of the image. The demo private keys in
+# config/ are for the local scripts, which mount them at run time; they must not
+# be baked into a published image.
+.git
+build/
+**/*.key
+**/*.crt
+**/*.pem

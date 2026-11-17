@@ -115,10 +115,10 @@ deb: build/$(BINARY)-linux-$(DEB_ARCH)
 	install -m 644 debian/systemd/microtunnel-peer.service $(DEB_ROOT)/lib/systemd/system/
 	install -m 644 debian/systemd/microtunnel-peer-1.service $(DEB_ROOT)/lib/systemd/system/
 	install -m 644 debian/systemd/microtunnel-peer-2.service $(DEB_ROOT)/lib/systemd/system/
-	install -m 640 config/relay.yaml $(DEB_ROOT)/etc/microtunnel/relay.yaml
-	install -m 640 config/peer.yaml $(DEB_ROOT)/etc/microtunnel/peer.yaml
-	install -m 640 config/peer-1.yaml $(DEB_ROOT)/etc/microtunnel/peer-1.yaml
-	install -m 640 config/peer-2.yaml $(DEB_ROOT)/etc/microtunnel/peer-2.yaml
+	install -m 640 packaging/config/relay.yaml $(DEB_ROOT)/etc/microtunnel/relay.yaml
+	install -m 640 packaging/config/peer.yaml $(DEB_ROOT)/etc/microtunnel/peer.yaml
+	install -m 640 packaging/config/peer-1.yaml $(DEB_ROOT)/etc/microtunnel/peer-1.yaml
+	install -m 640 packaging/config/peer-2.yaml $(DEB_ROOT)/etc/microtunnel/peer-2.yaml
 	sed -e "s/^Architecture:.*/Architecture: $(DEB_ARCH)/" -e "s/^Version:.*/Version: $(DEB_VERSION)/" debian/control > $(DEB_ROOT)/DEBIAN/control
 	install -m 755 debian/postinst $(DEB_ROOT)/DEBIAN/postinst
 	install -m 755 debian/prerm $(DEB_ROOT)/DEBIAN/prerm

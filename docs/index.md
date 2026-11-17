@@ -107,6 +107,10 @@ To add peers to a running relay without editing its YAML, see [Adding Peers With
 
 ## Configuration
 
+> **The packaged config files are templates.** `/etc/microtunnel/relay.yaml`, `peer.yaml`, `peer-1.yaml` and `peer-2.yaml` contain `<placeholders>` and **no keys or secrets**, so a service started from an untouched template refuses to run. Create keys with `microtunnel keygen`, set your own long random `pre_shared_key`, and fill in the public keys and endpoint as shown below.
+>
+> The repository's demo keys and the pre-shared keys `some-psk` / `change-me` are public. `microtunnel` logs a warning at startup if it finds any of them in use; never rely on them for a real network.
+
 ### Relay
 
 The relay has a public IP and accepts inbound connections from peers. It does not have an `endpoint` set — it never initiates outbound connections.

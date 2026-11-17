@@ -5,7 +5,11 @@ systemctl daemon-reload
 
 echo "Microtunnel installed."
 echo ""
-echo "Edit configs in /etc/microtunnel/, then enable the appropriate service:"
+echo "The configs in /etc/microtunnel/ are TEMPLATES with <placeholders>; the services will not"
+echo "start until you fill them in. First create this machine's key pair:"
+echo "  sudo microtunnel keygen <relay|peer|peer-1|peer-2> -dir /etc/microtunnel"
+echo ""
+echo "Then edit the matching config and enable the appropriate service:"
 echo "  systemctl enable --now microtunnel-relay    # on the relay machine"
 echo "  systemctl enable --now microtunnel-peer     # on a generic peer machine"
 echo "  systemctl enable --now microtunnel-peer-1   # on peer-1 machine"

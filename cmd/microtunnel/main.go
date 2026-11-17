@@ -99,6 +99,12 @@ func run() error {
 		}
 		logx.Infof("Known peer: %s (%d route(s))%s", proto.BytesToHex(p.PublicKey[:]), len(p.AllowedIPs), mode)
 	}
+	if name, ok := config.DemoKeyName(pub); ok {
+		logx.Warnf("This node uses the publicly known demo key %q (its private key is in the repository); anyone can impersonate it. Generate your own with `microtunnel keygen`", name)
+	}
+	for _, w := range cfg.Warnings() {
+		logx.Warnf("%s", w)
+	}
 	if cfg.HasPSK {
 		logx.Infof("PSK set — handshake will be authenticated")
 	} else {
