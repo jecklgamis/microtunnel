@@ -4,6 +4,9 @@
 
 📖 [User Guide](https://jecklgamis.github.io/microtunnel/)
 
+> [!WARNING]
+> **Alpha software.** microtunnel is in an early alpha state: the configuration format, CLI and wire protocol may still change, it has not had an independent security audit, and it has had little real-world use. Don't rely on it to protect sensitive traffic or for production workloads. See [Limitations](#limitations) and [docs/security.md](docs/security.md).
+
 A simple Linux **hub-and-spoke layer 3 overlay network** using a TUN virtual interface over UDP. A working VPN implementation with a deliberately small feature set.
 
 Inspired by [WireGuard](https://www.wireguard.com/), this project implements similar concepts — X25519 key exchange, identity hiding, AllowedIPs routing, and session rekeying — reimplemented from scratch in Go. It is a port of the original C implementation (`lanecove-tunnel`) and uses the same wire protocol and configuration format.
@@ -51,7 +54,7 @@ X25519 key exchange with forward secrecy, AES-256-GCM, identity hiding, optional
 - **Single-process** — a configurable pool of worker goroutines (`worker_threads`, default `min(4, nproc)`) parallelizes packet crypto across cores, but it is still one process per interface (one config, one TUN device) with no multi-host failover
 - **Hub-and-spoke only** — peer-to-peer traffic always goes through the relay; there are no direct connections or NAT traversal between peers
 - **Routes are static** — `tunnel_routes` are applied once at startup, and `allowed_ips` never create kernel routes, so a network behind a peer needs both (see [Routing a network behind a peer](docs/index.md#routing-a-network-behind-a-peer))
-- **Not audited** — not hardened for production use
+- **Alpha, not audited** — expect breaking changes; not hardened for production use
 
 ## Requirements
 
