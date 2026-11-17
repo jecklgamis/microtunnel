@@ -24,7 +24,7 @@ A simple Linux hub-and-spoke layer 3 overlay network using a TUN virtual interfa
 
 Peers behind NAT connect outbound to a relay with a public IP. All peer-to-peer traffic transits through the relay.
 
-See also: [Security](security) (handshake, wire format, review notes) and [Comparison](comparison) with WireGuard, OpenVPN and others. For a local demo in containers see the [Docker demo](docker).
+See also: [Security](security) (handshake, wire format, review notes). For a local demo in containers see the [Docker demo](docker).
 
 ---
 

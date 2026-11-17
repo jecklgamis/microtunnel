@@ -5,7 +5,7 @@
 📖 [User Guide](https://jecklgamis.github.io/microtunnel/)
 
 > [!WARNING]
-> **Alpha software.** microtunnel is in an early alpha state: the configuration format, CLI and wire protocol may still change, it has not had an independent security audit, and it has had little real-world use. Don't rely on it to protect sensitive traffic or for production workloads. See [Limitations](#limitations) and [docs/security.md](docs/security.md).
+> **Alpha software.** microtunnel is in an early alpha state: the configuration format, CLI and wire protocol may still change. Don't rely on it to protect sensitive traffic or for production workloads. See [Limitations](#limitations) and [docs/security.md](docs/security.md).
 
 A small, self-hosted **hub-and-spoke layer 3 VPN** for Linux and macOS. Machines behind NAT dial out to a relay with a public IP, and microtunnel gives them all addresses on one private network (`10.9.0.0/24`) over encrypted UDP. One static Go binary, one YAML file, no kernel module and no control-plane service.
 
@@ -55,7 +55,7 @@ Each node has a TUN interface carrying raw IP packets (layer 3, not Ethernet). T
 - **Compatible** — same wire protocol and config format as the original C implementation.
 - **Well tested** — unit tests and complete relay/peer topologies run in-process without privileges, plus Docker end-to-end tests with real TUN devices; CI runs them all on every push.
 
-Details on the protocol and its review are in [docs/security.md](docs/security.md); how it compares with WireGuard, OpenVPN and others is in [docs/comparison.md](docs/comparison.md).
+Details on the protocol and its review are in [docs/security.md](docs/security.md).
 
 ## Common Use Cases
 
@@ -245,7 +245,7 @@ curl http://localhost:15052                 # peer-1's Envoy HTTP proxy -> tunne
 - **Single-process** — worker goroutines parallelize packet crypto across cores, but it is still one process per interface (one config, one TUN device) with no multi-host failover
 - **Hub-and-spoke only** — peer-to-peer traffic always goes through the relay; there are no direct connections or NAT traversal between peers
 - **Routes are static** — `tunnel_routes` are applied once at startup, and `allowed_ips` never create kernel routes, so a network behind a peer needs both (see [Routing a network behind a peer](docs/index.md#routing-a-network-behind-a-peer))
-- **Alpha, not audited** — expect breaking changes; not hardened for production use
+- **Alpha** — expect breaking changes; not hardened for production use
 
 ## Development
 
