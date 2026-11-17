@@ -29,6 +29,16 @@ Inspired by [WireGuard](https://www.wireguard.com/): X25519 key exchange, identi
 
 Each node has a TUN interface carrying raw IP packets (layer 3, not Ethernet). Traffic from peer-1 to peer-2 travels peer-1 → relay → peer-2; the relay forwards in user space, so no kernel IP forwarding is needed. The same program is the relay or a peer, and the config decides which.
 
+## Try it
+
+With Docker, from a checkout of this repo:
+
+```bash
+docker compose up --build
+```
+
+It starts a relay and two peers on your machine, then pings and curls one peer from the other through the tunnel and prints `TUNNEL OK`. For real machines, see [Running](#running).
+
 ## Features
 
 **Simple to run**
