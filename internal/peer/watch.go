@@ -27,16 +27,22 @@ func (p *Peer) WatchPeers(ctx context.Context, configPath, peersDir string, inte
 		defer t.Stop()
 		tick = t.C
 	}
-	applied := config.PeersDirFingerprint(peersDir) // what the running peers reflect
-	seen := applied                                 // last fingerprint observed
+	// There is no baseline yet. The caller loaded the peers before starting us, and a
+	// file may have been added in between, so the first stable fingerprint is
+	// reconciled with a reload (silent when nothing differs) instead of assumed to
+	// match the running peers.
+	var applied, seen string
+	known := false // applied is valid: the running peers reflect that fingerprint
 
-	reload := func(why string) {
-		logx.Infof("Reloading peers (%s)", why)
+	reload := func(why string, quiet bool) {
+		if !quiet {
+			logx.Infof("Reloading peers (%s)", why)
+		}
 		res, err := p.ReloadFrom(configPath)
 		switch {
 		case err != nil:
 			logx.Errorf("Peer reload failed, keeping current peers: %v", err)
-		case !res.Changed():
+		case !res.Changed() && !quiet:
 			logx.Infof("Peer reload: no changes")
 		}
 	}
@@ -46,19 +52,19 @@ func (p *Peer) WatchPeers(ctx context.Context, configPath, peersDir string, inte
 		case <-ctx.Done():
 			return
 		case <-trigger:
-			reload("requested")
-			applied = config.PeersDirFingerprint(peersDir)
+			reload("requested", false)
+			applied, known = config.PeersDirFingerprint(peersDir), true
 			seen = applied
 		case <-tick:
 			fp := config.PeersDirFingerprint(peersDir)
 			switch {
-			case fp == applied:
+			case known && fp == applied:
 				seen = fp
 			case fp != seen:
 				seen = fp // changed since last poll: wait for it to settle
 			default:
-				reload("peers_dir changed")
-				applied = fp
+				reload("peers_dir changed", !known)
+				applied, known = fp, true
 			}
 		}
 	}

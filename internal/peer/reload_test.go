@@ -362,6 +362,11 @@ func (p *Peer) knows(pub [proto.PubKeyLen]byte) bool {
 
 func TestWatchPeersPicksUpDirectoryChanges(t *testing.T) {
 	logs := captureLogs(t)
+	defer func() {
+		if t.Failed() {
+			t.Logf("captured logs:\n%s", logs.String())
+		}
+	}()
 	dir := t.TempDir()
 	pd := filepath.Join(dir, "peers.d")
 	if err := os.Mkdir(pd, 0o755); err != nil {
