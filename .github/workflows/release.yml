@@ -152,3 +152,26 @@ jobs:
         uses: softprops/action-gh-release@v3
         with:
           files: build/microtunnel-darwin-*
+
+  # Universal (arm64 + amd64) macOS installer. Needs a macOS runner for lipo,
+  # pkgbuild and productbuild. Not signed or notarized, so Gatekeeper needs
+  # right-click > Open, or `sudo installer -pkg <file> -target /`.
+  build-macos-pkg:
+    needs: create-release
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+
+      - name: Build macOS installer
+        run: |
+          VERSION="${{ github.ref_name }}"
+          VERSION="${VERSION#v}"
+          make pkg VERSION=$VERSION
+
+      - name: Upload to GitHub Release
+        uses: softprops/action-gh-release@v3
+        with:
+          files: build/microtunnel-*-universal.pkg
