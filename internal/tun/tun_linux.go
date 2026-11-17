@@ -1,10 +1,11 @@
 //go:build linux
 
-// Package tun opens Linux TUN devices.
+// Package tun opens TUN devices: /dev/net/tun on Linux, utun on macOS.
 package tun
 
 import (
 	"fmt"
+	"io"
 	"os"
 
 	"golang.org/x/sys/unix"
@@ -20,7 +21,7 @@ const devPath = "/dev/net/tun"
 // The returned *os.File is non-blocking and registered with Go's poller, so
 // any number of goroutines may Read from it concurrently (the kernel hands
 // each packet to exactly one reader) and Close unblocks them all.
-func Open(name string) (*os.File, string, error) {
+func Open(name string) (io.ReadWriteCloser, string, error) {
 	fd, err := unix.Open(devPath, unix.O_RDWR|unix.O_CLOEXEC, 0)
 	if err != nil {
 		return nil, "", fmt.Errorf("unable to open tunnel %s: %w", devPath, err)

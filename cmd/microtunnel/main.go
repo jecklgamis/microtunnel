@@ -1,5 +1,5 @@
-// Command microtunnel is a simple Linux hub-and-spoke layer 3 overlay network:
-// a TUN virtual interface carried over encrypted UDP.
+// Command microtunnel is a simple hub-and-spoke layer 3 overlay network for
+// Linux and macOS: a TUN virtual interface carried over encrypted UDP.
 //
 // Usage:
 //
@@ -89,6 +89,12 @@ func run() error {
 		return err
 	}
 	logx.Infof("Opened tunnel %s", name)
+	if cfg.TunnelAddress.IsValid() {
+		if err := tun.Configure(name, cfg.TunnelAddress, cfg.TunnelRoutes); err != nil {
+			_ = dev.Close()
+			return err
+		}
+	}
 
 	conn, err := peer.Listen(cfg.Address, cfg.Port)
 	if err != nil {

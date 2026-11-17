@@ -11,7 +11,7 @@ Go module `github.com/jecklgamis/microtunnel` (Go 1.26+). Only dependencies: `go
 - `internal/proto` — wire protocol. `proto.go` (constants, hex, AES-256-GCM `Seal`/`Open`, PSK key derivation), `handshake.go` (X25519 handshake with identity hiding: `ClientInit`/`ClientFinish`/`ServerRespond`, PEM key loading), `replay.go` (2048-bit sliding window `ReplayWindow`).
 - `internal/config` — `config.go` (YAML parse + validation + defaults), `cidr.go` (IPv4 `Prefix`).
 - `internal/peer` — `peer.go` (`Peer`, `New`, `Run`, TUN/UDP worker loops, data + handshake handlers), `table.go` (session table, routing, `sessionInit`), `housekeeping.go` (rekey/expiry/keepalive/DNS), `listen.go` (UDP socket setup).
-- `internal/tun` — Linux TUN device (`tun_linux.go`); non-Linux stub returns an error so everything else builds and tests on macOS.
+- `internal/tun` — TUN devices behind `tun.Open(name) (io.ReadWriteCloser, name, error)`: `tun_linux.go` (`/dev/net/tun`, `TUNSETIFF`), `tun_darwin.go` (utun kernel-control socket; the 4-byte AF header is stripped/added in `Read`/`Write`), `tun_other.go` (stub error). `utun.go` holds the platform-neutral, unit-tested utun framing/naming helpers; `configure.go` builds and runs the `ifconfig`/`route` (macOS) or `ip` (Linux) commands for `tunnel_address`/`tunnel_routes` (`Commands` is pure and tested for both OSes).
 - `internal/logx` — timestamped logger.
 
 ### Topology
@@ -60,6 +60,8 @@ prev_key_grace: 90                   # seconds old key is retained after rekey
 handshake_timeout: 5                 # seconds before pending handshake is abandoned
 handshake_cooldown: 5                # seconds between handshake attempts to same peer
 worker_threads: 4                    # optional: packet workers (default: min(4, NumCPU), max 32)
+tunnel_address: 10.9.0.2/24          # optional: program assigns this overlay IP to the TUN itself (required on macOS)
+tunnel_routes: [192.168.50.0/24]     # optional: extra CIDRs routed via the TUN (needs tunnel_address)
 
 peers:
   - public_key: <hex>
@@ -67,7 +69,7 @@ peers:
     allowed_ips:
       - 10.9.0.0/24
 ```
-Unknown keys are ignored. Limits: 64 peers, 16 `allowed_ips` per peer, interface name ≤ 15 chars. Endpoint hostnames are resolved at startup (failure is fatal) and re-resolved before each reconnect.
+Unknown keys are ignored. On macOS use `interface: utun` (kernel assigns `utunN`; a non-`utunN` name is ignored) plus `tunnel_address`, because a utun device only exists once opened — see `config/peer-macos.yaml` and `scripts/run-macos.sh` (runs `sudo ./microtunnel`). When `tunnel_address` is unset the interface is expected to be configured externally (Docker entrypoint / `microtunnel-create-tunnel.sh` on Linux). Limits: 64 peers, 16 `allowed_ips` per peer, interface name ≤ 15 chars. Endpoint hostnames are resolved at startup (failure is fatal) and re-resolved before each reconnect.
 
 ### Session Management
 - Sessions live in a flat array (`table.sessions[]`, max 64)
@@ -133,6 +135,8 @@ On the TUN→UDP path, destination IP is looked up using longest-prefix match ac
 ## Build
 ```
 make all                # build static ./microtunnel (linux, host arch)
+make host               # build ./microtunnel for the current machine (use on macOS; run with sudo)
+make macos              # build/microtunnel-darwin-{arm64,amd64}
 make test               # go test ./... natively (no root/TUN/Docker needed; works on macOS)
 make test-race          # go test -race
 make vet                # go vet for host OS and GOOS=linux
@@ -222,7 +226,7 @@ Consumed by `scripts/docker-entrypoint.sh`:
 | `ENVOY_UPSTREAM_PORT` | `80` | Upstream port for Envoy proxy |
 
 ## Platform Notes
-- The binary requires a Linux kernel (`/dev/net/tun`); the Go code and tests build and run on macOS too (the TUN package has a non-Linux stub)
+- Runs on Linux (`/dev/net/tun`) and macOS (utun, needs root). The tests need neither (in-memory TUN). The utun open path itself is only verifiable on a real Mac with sudo; its pure logic is unit-tested.
 - Docker containers require `--cap-add=NET_ADMIN` and `--device=/dev/net/tun`; systemd units use `AmbientCapabilities=CAP_NET_ADMIN`
 - Building needs only Go; `openssl` is needed only by the key-generation scripts
 

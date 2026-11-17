@@ -28,7 +28,7 @@ rpm: BIN_VERSION = $(RPM_VERSION)
 LDFLAGS = -s -w -X main.version=$(BIN_VERSION)
 GOBUILD  = CGO_ENABLED=0 GOOS=linux $(GO) build -trimpath -ldflags "$(LDFLAGS)"
 
-.PHONY: all build test test-race vet fmt fmt-check check image run-shell run test-image \
+.PHONY: all build host macos test test-race vet fmt fmt-check check image run-shell run test-image \
         test-using-docker integration-test deb rpm clean FORCE
 
 all: build
@@ -39,7 +39,20 @@ build:
 	$(GOBUILD) -o $(BINARY) $(PKG)
 	chmod +x $(BINARY)
 
-# Per-architecture build used by the packages.
+# Builds ./microtunnel for the machine you are on (GOOS/GOARCH of the host).
+# Use this on macOS; run it with sudo (creating a utun device needs root).
+host:
+	CGO_ENABLED=0 $(GO) build -trimpath -ldflags "$(LDFLAGS)" -o $(BINARY) $(PKG)
+	chmod +x $(BINARY)
+
+# Release binaries for macOS (Apple silicon and Intel).
+macos: build/$(BINARY)-darwin-arm64 build/$(BINARY)-darwin-amd64
+
+build/$(BINARY)-darwin-%: FORCE
+	@mkdir -p build
+	CGO_ENABLED=0 GOOS=darwin GOARCH=$* $(GO) build -trimpath -ldflags "$(LDFLAGS)" -o $@ $(PKG)
+
+# Per-architecture Linux build used by the packages.
 build/$(BINARY)-%: FORCE
 	@mkdir -p build
 	GOARCH=$* $(GOBUILD) -o $@ $(PKG)

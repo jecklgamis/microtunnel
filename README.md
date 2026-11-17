@@ -52,7 +52,7 @@ The relay is suited for low-to-moderate traffic between a small number of peers,
 - **DoS mitigations** — 5-second handshake cooldown per address and per public key
 
 ### Limitations
-- **Linux only at runtime** — opens `/dev/net/tun`, so the binary only runs on Linux (use Docker on macOS). The code and the whole test suite build and run natively on macOS and Linux, since the tests use in-memory TUN devices
+- **Linux and macOS** — Linux uses `/dev/net/tun`, macOS uses a `utun` device (see [Running on macOS](#running-on-macos)). Windows and BSD are not supported. The whole test suite runs natively on both, since the tests use in-memory TUN devices
 - **IPv4 only** — TUN packets are validated as IPv4; IPv6 and non-IP traffic are dropped
 - **UDP transport** — no packet ordering guarantees; packet loss is not retransmitted
 - **Single-process** — a configurable pool of worker goroutines (`worker_threads`, default `min(4, nproc)`) parallelizes packet crypto across cores, but it's still one process per peer/relay with no multi-host failover
@@ -60,7 +60,7 @@ The relay is suited for low-to-moderate traffic between a small number of peers,
 
 ## Requirements
 
-**To run:** Linux with `iproute2` (for the helper script that creates the TUN interface). The binary is a static Go executable — no OpenSSL, libyaml or libc version requirements. `openssl` is only needed by the key-generation scripts.
+**To run:** Linux with `iproute2` (for the helper script that creates the TUN interface), or macOS 12+ (no extra tools; see below). The binary is a static Go executable — no OpenSSL, libyaml or libc version requirements. `openssl` is only needed by the key-generation scripts.
 
 **To build:** Go 1.26+ and `make`. Docker is optional (image builds, running the tests on Linux, local end-to-end testing).
 
@@ -115,6 +115,50 @@ sudo ./microtunnel -c /etc/microtunnel/peer-2.yaml
 ping 10.9.0.2   # relay → peer-1
 ping 10.9.0.3   # relay → peer-2
 ```
+
+---
+
+## Running on macOS
+
+The binary runs natively on macOS (Apple silicon and Intel) using a `utun` device. Creating one requires **root**, so run it with `sudo`.
+
+macOS differs from Linux in two ways, both handled by config:
+
+- Tunnel devices are named `utunN` and the kernel picks the next free one, so set `interface: utun` (a specific `utun5` also works; any other name is ignored and the kernel chooses).
+- A utun device only exists once the process has opened it, so the helper script `microtunnel-create-tunnel.sh` cannot pre-create it. Instead the program configures the interface itself: set **`tunnel_address`** (this Mac's overlay IP, e.g. `10.9.0.4/24`) and optionally **`tunnel_routes`** (extra CIDRs to route through the tunnel). The overlay subnet is routed automatically, and the interface MTU is set to 1428. These two keys also work on Linux.
+
+A Mac is a regular peer (behind NAT, dialing out to the relay):
+
+```bash
+brew install go                      # Go 1.26+
+git clone git@github.com:jecklgamis/microtunnel.git && cd microtunnel
+make host                            # builds ./microtunnel for this Mac  (`make macos` builds arm64 + amd64 into build/)
+
+# 1. Generate this Mac's key pair (openssl: `brew install openssl` if needed)
+cd config && ../scripts/microtunnel-generate-peer-keys.sh my-mac && cd ..
+./scripts/microtunnel-extract-pubkey-hex.sh config/my-mac.crt   # give this hex key to the relay's operator
+
+# 2. On the relay, add the Mac as a peer:
+#      - public_key: <hex from above>
+#        allowed_ips: [10.9.0.4/32]
+
+# 3. Copy config/peer-macos.yaml, fill in the relay's public key, endpoint and PSK,
+#    point private_key_file at config/my-mac.key, then:
+./scripts/run-macos.sh my-mac.yaml   # runs `sudo ./microtunnel -c my-mac.yaml`
+```
+
+Check it from another terminal:
+
+```bash
+ifconfig | grep -A3 utun            # your tunnel interface with 10.9.0.4
+netstat -rn | grep 10.9.0           # route for 10.9.0.0/24 via that utun
+ping 10.9.0.1                       # the relay
+```
+
+Notes:
+- If the Mac is also the machine hosting the relay for local experiments, use [Docker](#running-with-docker) instead; running relay and peers on one host doesn't work for the reason given under [Running Natively](#running-natively-linux).
+- macOS may show a prompt to allow incoming network connections for the binary the first time; allow it if you run an inbound-only peer.
+- The utun device code can't be covered by the automated tests (they need root); the framing, interface-name, command-generation and config logic are unit-tested, and the Linux equivalent is verified in Docker. Please report anything odd on real hardware.
 
 ---
 
@@ -190,6 +234,8 @@ make check              # gofmt check + go vet (macOS and Linux) + race tests
 make test-using-docker  # run the race-detector suite on Linux in a golang container
 make integration-test   # full test with real TUN devices: relay + 2 peers in Docker, ping + curl
 make all                # build the static ./microtunnel binary (linux, host architecture)
+make host               # build ./microtunnel for the machine you're on (use on macOS)
+make macos              # build macOS binaries (arm64 + amd64) into build/
 make image              # build the Docker image (microtunnel-peer:latest)
 make deb | make rpm     # build packages (DEB_ARCH=amd64|arm64, RPM_ARCH=x86_64|aarch64)
 ```
@@ -202,7 +248,7 @@ Layout:
 | `internal/proto` | wire protocol: AES-256-GCM data packets, X25519 handshake with identity hiding, session-key derivation, 2048-bit replay window |
 | `internal/config` | YAML config parsing/validation, CIDR parsing |
 | `internal/peer` | session table, AllowedIPs routing, worker goroutines, handshake state machine, housekeeping (rekey/expiry/keepalive) |
-| `internal/tun` | Linux TUN device (`/dev/net/tun`) |
+| `internal/tun` | TUN devices: Linux `/dev/net/tun`, macOS `utun`; optional interface address/route setup |
 | `internal/logx` | timestamped logger |
 
 The `peer` tests run complete relay/peer topologies inside one process over loopback UDP with in-memory TUN devices, so rekeying, expiry, roaming and spoofing are all exercised without privileges.
@@ -308,7 +354,7 @@ Magic is `0xdeadbeefcafebabe`. Packets with a bad magic header, invalid GCM tag,
 | **Rekeying** | Every 3 min | Every 3 min (180s) | Configurable | IKEv2 rekeying | No | No |
 | **Kernel module** | No (userspace) | Yes | No (userspace) | Partial (xfrm) | Yes | No |
 | **IPv6 support** | No | Yes | Yes | Yes | Yes | Yes |
-| **Platforms** | Linux only (runtime) | Linux, macOS, Windows, BSD | Cross-platform | Cross-platform | Linux | Cross-platform |
+| **Platforms** | Linux, macOS | Linux, macOS, Windows, BSD | Cross-platform | Cross-platform | Linux | Cross-platform |
 | **Throughput** | Low-medium (userspace, multi-goroutine) | High (kernel) | Medium | High (kernel) | High (kernel) | Medium |
 | **Lines of code** | ~2,100 (Go) | ~4,000 (kernel) | ~100,000+ | ~500,000+ | — | ~50,000 |
 | **Purpose** | Simple/small-scale | Production | Production | Production | Infrastructure | Mesh VPN |

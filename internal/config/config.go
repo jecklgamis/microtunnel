@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/netip"
 	"os"
 	"runtime"
 	"strconv"
@@ -65,7 +66,16 @@ type Config struct {
 	HandshakeTimeout  int
 	HandshakeCooldown int
 	WorkerThreads     int // resolved: never 0 after Load/Parse
-	Peers             []Peer
+
+	// Optional: let the program configure the TUN interface itself (needed on
+	// macOS, where a utun device only exists once the process has opened it).
+	// TunnelAddress is this node's overlay address, e.g. 10.9.0.2/24; its subnet
+	// is routed through the interface automatically on macOS. TunnelRoutes lists
+	// extra CIDRs to route through it. Unset means "configure it externally"
+	// (e.g. scripts/microtunnel-create-tunnel.sh on Linux).
+	TunnelAddress netip.Prefix
+	TunnelRoutes  []netip.Prefix
+	Peers         []Peer
 }
 
 type rawPeer struct {
@@ -89,6 +99,8 @@ type rawConfig struct {
 	HandshakeTimeout  *int      `yaml:"handshake_timeout"`
 	HandshakeCooldown *int      `yaml:"handshake_cooldown"`
 	WorkerThreads     *int      `yaml:"worker_threads"`
+	TunnelAddress     string    `yaml:"tunnel_address"`
+	TunnelRoutes      []string  `yaml:"tunnel_routes"`
 	Peers             []rawPeer `yaml:"peers"`
 }
 
@@ -145,6 +157,24 @@ func Parse(data []byte) (*Config, error) {
 		}
 		cfg.PreSharedKey = *raw.PreSharedKey
 		cfg.HasPSK = true
+	}
+
+	if raw.TunnelAddress != "" {
+		a, err := netip.ParsePrefix(raw.TunnelAddress)
+		if err != nil || !a.Addr().Is4() {
+			return nil, fmt.Errorf("tunnel_address must be an IPv4 address with prefix length, e.g. 10.9.0.2/24 (got %q)", raw.TunnelAddress)
+		}
+		cfg.TunnelAddress = a
+	}
+	if len(raw.TunnelRoutes) > 0 && raw.TunnelAddress == "" {
+		return nil, errors.New("tunnel_routes requires tunnel_address")
+	}
+	for _, r := range raw.TunnelRoutes {
+		pfx, err := netip.ParsePrefix(r)
+		if err != nil || !pfx.Addr().Is4() {
+			return nil, fmt.Errorf("invalid tunnel_routes entry %q (expected IPv4 CIDR)", r)
+		}
+		cfg.TunnelRoutes = append(cfg.TunnelRoutes, pfx.Masked())
 	}
 
 	if len(raw.Peers) > MaxPeers {

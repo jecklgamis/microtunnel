@@ -1,0 +1,22 @@
+# macOS peer template. Fill in the placeholders, then run:
+#   ./scripts/run-macos.sh config/peer-macos.yaml        (uses sudo)
+#
+# macOS names tunnel devices utunN and assigns the next free one, so `interface`
+# is just "utun" (a specific "utun5" is also accepted). The program assigns the
+# overlay address and routes itself via tunnel_address / tunnel_routes.
+# The relay must list this peer's public key with allowed_ips: [<tunnel_address>/32].
+interface: utun
+port: 5040
+private_key_file: /usr/local/etc/microtunnel/peer.key
+pre_shared_key: <same-psk-as-relay>
+verbose: false
+
+tunnel_address: 10.9.0.4/24     # this Mac's overlay IP; the 10.9.0.0/24 subnet is routed via the tunnel
+# tunnel_routes:                # optional extra CIDRs to route through the tunnel
+#   - 192.168.50.0/24
+
+peers:
+  - public_key: <relay-public-key-hex>
+    endpoint: <relay-host>:5040
+    allowed_ips:
+      - 10.9.0.0/24

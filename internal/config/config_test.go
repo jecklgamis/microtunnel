@@ -248,3 +248,44 @@ func TestPeerTemplateRejectedUntilEdited(t *testing.T) {
 		t.Fatal("placeholder peer.yaml unexpectedly parsed")
 	}
 }
+
+func TestParseTunnelAddressAndRoutes(t *testing.T) {
+	c, err := Parse([]byte(minimalYAML + "tunnel_address: 10.9.0.2/24\ntunnel_routes: [192.168.50.9/24, 10.8.0.0/16]\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := c.TunnelAddress.String(); got != "10.9.0.2/24" {
+		t.Fatalf("tunnel_address=%s", got)
+	}
+	if len(c.TunnelRoutes) != 2 || c.TunnelRoutes[0].String() != "192.168.50.0/24" || c.TunnelRoutes[1].String() != "10.8.0.0/16" {
+		t.Fatalf("tunnel_routes=%v (host bits must be masked)", c.TunnelRoutes)
+	}
+}
+
+func TestParseTunnelAddressUnsetByDefault(t *testing.T) {
+	c, err := Parse([]byte(minimalYAML))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.TunnelAddress.IsValid() || len(c.TunnelRoutes) != 0 {
+		t.Fatal("tunnel_address must be opt-in")
+	}
+}
+
+func TestParseTunnelAddressRejectsInvalid(t *testing.T) {
+	for _, tc := range []struct{ name, extra, want string }{
+		{"no prefix", "tunnel_address: 10.9.0.2\n", "tunnel_address"},
+		{"ipv6", "tunnel_address: fd00::1/64\n", "tunnel_address"},
+		{"garbage", "tunnel_address: nope\n", "tunnel_address"},
+		{"routes without address", "tunnel_routes: [10.0.0.0/8]\n", "requires tunnel_address"},
+		{"bad route", "tunnel_address: 10.9.0.2/24\ntunnel_routes: [nope]\n", "tunnel_routes"},
+		{"ipv6 route", "tunnel_address: 10.9.0.2/24\ntunnel_routes: ['fd00::/8']\n", "tunnel_routes"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := Parse([]byte(minimalYAML + tc.extra))
+			if err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("err=%v, want containing %q", err, tc.want)
+			}
+		})
+	}
+}

@@ -95,3 +95,26 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: build/rpm/RPMS/**/*.rpm
+
+  # Static binaries for macOS (Apple silicon + Intel), cross-compiled on Linux.
+  # Run with sudo; see "Running on macOS" in the README. Unsigned, so Gatekeeper
+  # may require `xattr -d com.apple.quarantine <file>` after download.
+  build-macos:
+    needs: create-release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Build macOS binaries
+        run: |
+          VERSION="${{ github.ref_name }}"
+          VERSION="${VERSION#v}"
+          make macos VERSION=$VERSION
+
+      - name: Upload to GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: build/microtunnel-darwin-*
