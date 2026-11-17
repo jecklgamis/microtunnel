@@ -6,7 +6,19 @@ on:
       - 'v*'
 
 jobs:
+  # Nothing is released unless the tagged commit passes the fast gate.
+  # (The end-to-end tests ran on the push to main that this tag points at.)
+  gate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+      - run: make check
+
   create-release:
+    needs: gate
     runs-on: ubuntu-latest
     outputs:
       release_id: ${{ steps.create.outputs.id }}

@@ -31,7 +31,7 @@ GOBUILD  = CGO_ENABLED=0 GOOS=linux $(GO) build -trimpath -ldflags "$(LDFLAGS)"
 
 .PHONY: all build install uninstall linux macos \
         test test-race vet fmt fmt-check check test-image test-using-docker \
-        image integration-test dynamic-test enroll-test init-test \
+        image integration-test dynamic-test enroll-test init-test e2e ci \
         deb rpm pkg clean FORCE
 
 # Vet and test (native, no Docker or root), then build for this machine.
@@ -118,6 +118,13 @@ enroll-test: image
 # `init relay` / `init peer`: one-command setup of a relay and two peers.
 init-test: image
 	./scripts/run-init-test.sh
+
+# The slow gate: every end-to-end test, one after another (they share Docker ports, so
+# don't run this with -j). The image is built once per invocation.
+e2e: integration-test dynamic-test enroll-test init-test
+
+# The full quality gate, locally and in CI: fast checks, then the end-to-end tests.
+ci: check e2e
 
 # --- packages ----------------------------------------------------------------------
 deb: build/$(BINARY)-linux-$(DEB_ARCH)
