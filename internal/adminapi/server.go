@@ -20,6 +20,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/jecklgamis/microtunnel/internal/admin"
@@ -113,7 +114,11 @@ func Listen(path string) (net.Listener, error) {
 		}
 		_ = os.Remove(path)
 	}
+	// Create the socket already private: with the usual umask it would
+	// otherwise exist briefly with broader permissions before the Chmod.
+	prev := syscall.Umask(0o177)
 	ln, err := net.Listen("unix", path)
+	syscall.Umask(prev)
 	if err != nil {
 		return nil, err
 	}
