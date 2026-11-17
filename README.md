@@ -162,6 +162,61 @@ Notes:
 
 ---
 
+## Dynamic Peers (no restarts)
+
+A relay normally lists every peer in its YAML, and editing that means a restart that drops every session. Instead, point the relay at a directory with **`peers_dir`** and manage peers with the built-in CLI. A running relay notices changes within a second or two, and **sessions of unaffected peers are never interrupted**.
+
+```yaml
+# relay.yaml
+interface: microtunnel0
+private_key_file: relay.key
+pre_shared_key: some-psk
+tunnel_address: 10.9.0.1/24     # the overlay subnet peers are allocated from
+peers_dir: peers.d              # relative paths are resolved against this file's directory
+# `peers:` is now optional; inline peers and peers_dir peers can be mixed
+```
+
+```bash
+mkdir peers.d                   # once
+
+# Recommended: the new machine makes its own key, so its private key never leaves it
+microtunnel keygen laptop                      # on the laptop: writes laptop.key/.crt, prints the public key
+microtunnel peer add laptop -c relay.yaml -public-key <hex> -endpoint relay.example.com:5040
+#   -> picks the next free overlay IP (10.9.0.2), writes peers.d/laptop.yaml,
+#      and prints a ready-made config for the laptop; save it there as laptop.yaml
+
+# Or let the relay admin create everything (bundle of .key, .crt and .yaml to copy over)
+microtunnel peer add phone -c relay.yaml -generate -key-dir ./phone -endpoint relay.example.com:5040
+
+microtunnel peer list   -c relay.yaml          # name, allowed IPs, key, source (peers_dir or config)
+microtunnel peer remove laptop -c relay.yaml   # cut off immediately
+```
+
+What a reload does (also triggered by `kill -HUP <relay pid>`, which re-reads the whole peer list):
+
+| Change | Effect |
+|--------|--------|
+| peer added | becomes known at once: accepted when it connects (or dialed, if it has an `endpoint`) |
+| peer removed | its session and any pending handshake are dropped immediately; its packets are discarded and its next handshake is rejected |
+| `allowed_ips` changed | applied to the live session straight away, with no re-handshake |
+| `endpoint` changed | re-resolved and used for the next dial; a handshake in flight to the old address is cancelled |
+| anything else in the main config | needs a restart (reload only touches peers) |
+
+A peer file holds one peer, using the same keys as an entry of `peers:`:
+
+```yaml
+# peers.d/laptop.yaml  (the file name is the peer name)
+public_key: <hex>
+allowed_ips: [10.9.0.2/32]
+endpoint: host:port        # optional, only for peers the relay should dial
+```
+
+Safeguards: a file that fails to parse, or a duplicate public key, makes the whole reload fail and **the previous peer set keeps running** (the error is logged). The CLI writes files atomically, never overwrites an existing key, refuses an IP that is already taken or outside the subnet, and a peer's spoke config is created with `reconnect_interval: 5` so a freshly added peer connects within seconds even if it starts before the relay has noticed it. The 64-peer limit still applies.
+
+Verify it end to end with real TUN devices: `make dynamic-test` (relay starts empty, adds alice and bob, alice and bob ping each other through the relay, alice is removed and cut off, and the relay process is shown never to have restarted).
+
+---
+
 ## Running With Docker
 
 **Setup (once):**
@@ -233,6 +288,7 @@ make test-race          # same, with the race detector
 make check              # gofmt check + go vet (macOS and Linux) + race tests
 make test-using-docker  # run the race-detector suite on Linux in a golang container
 make integration-test   # full test with real TUN devices: relay + 2 peers in Docker, ping + curl
+make dynamic-test       # real-TUN test of `peers_dir` + `microtunnel peer add/remove` against a running relay
 make all                # build the static ./microtunnel binary (linux, host architecture)
 make host               # build ./microtunnel for the machine you're on (use on macOS)
 make macos              # build macOS binaries (arm64 + amd64) into build/
@@ -244,10 +300,11 @@ Layout:
 
 | Path | Contents |
 |------|----------|
-| `cmd/microtunnel` | `main`: flags, config loading, signal handling, wiring |
+| `cmd/microtunnel` | `main`: flags, config loading, signal handling, wiring; `peer add/remove/list` and `keygen` subcommands |
 | `internal/proto` | wire protocol: AES-256-GCM data packets, X25519 handshake with identity hiding, session-key derivation, 2048-bit replay window |
-| `internal/config` | YAML config parsing/validation, CIDR parsing |
-| `internal/peer` | session table, AllowedIPs routing, worker goroutines, handshake state machine, housekeeping (rekey/expiry/keepalive) |
+| `internal/config` | YAML config parsing/validation, CIDR parsing, `peers_dir` loading |
+| `internal/admin` | the logic behind `microtunnel peer add/remove/list`: IP allocation, peer files, spoke-config generation |
+| `internal/peer` | session table, AllowedIPs routing, worker goroutines, handshake state machine, housekeeping (rekey/expiry/keepalive), live peer reload (`reload.go`, `watch.go`) |
 | `internal/tun` | TUN devices: Linux `/dev/net/tun`, macOS `utun`; optional interface address/route setup |
 | `internal/logx` | timestamped logger |
 
@@ -382,6 +439,7 @@ The wire protocol and YAML format are unchanged. The port deliberately tightens 
 - **Simultaneous-rekey tie-break** now works when both sides dial each other. (In C, a peer's initiation arriving from the address we had dialed was classified as a failed *response*, so the "higher public key wins" branch was unreachable there.) A forged packet can no longer cancel a pending handshake.
 - **Unknown peers get no reply:** the responder checks the initiator's identity *before* answering the handshake.
 - **DNS** re-resolution no longer happens while holding the session-table lock.
+- **Dynamic peers** (new): `peers_dir`, hot reload (`SIGHUP` or automatic), and the `peer`/`keygen` subcommands have no C equivalent. Duplicate peer public keys are now rejected.
 - **Config:** an empty `pre_shared_key`, a peer without `public_key`, and interface names longer than 15 characters are rejected instead of being silently accepted.
 
 ---

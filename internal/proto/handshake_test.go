@@ -298,3 +298,40 @@ func TestLoadStaticKeyErrors(t *testing.T) {
 		t.Fatal("expected error when loading a private key as a public key")
 	}
 }
+
+func TestWriteKeyPairRoundTrip(t *testing.T) {
+	k, err := GenerateKey()
+	if err != nil {
+		t.Fatal(err)
+	}
+	base := filepath.Join(t.TempDir(), "node")
+	keyPath, crtPath, err := WriteKeyPair(base, k)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := LoadStaticKey(keyPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !got.Equal(k) {
+		t.Fatal("private key did not round-trip")
+	}
+	pub, err := LoadPublicKey(crtPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pub != PubBytes(k) {
+		t.Fatal("public key did not round-trip")
+	}
+	if st, _ := os.Stat(keyPath); st.Mode().Perm() != 0o600 {
+		t.Fatalf("private key mode %v, want 0600", st.Mode().Perm())
+	}
+	// Never overwrites, and leaves the original intact.
+	other, _ := GenerateKey()
+	if _, _, err := WriteKeyPair(base, other); err == nil {
+		t.Fatal("overwriting an existing key must fail")
+	}
+	if again, _ := LoadStaticKey(keyPath); !again.Equal(k) {
+		t.Fatal("existing key was clobbered")
+	}
+}

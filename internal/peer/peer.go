@@ -36,8 +36,10 @@ type Peer struct {
 	psk       *[proto.KeyLen]byte // nil when no pre-shared key is configured
 	hsSize    int                 // exact size of a handshake message
 
-	cfgs []*peerConfig
-	tbl  table
+	// cfgs is guarded by tbl.mu (Reload write-locks it).
+	cfgs     []*peerConfig
+	reloadMu sync.Mutex // serialises Reload
+	tbl      table
 
 	// precomp is the responder's pre-generated ephemeral key, consumed by the
 	// next inbound handshake and immediately regenerated so X25519 keygen never
@@ -88,14 +90,7 @@ func New(cfg *config.Config, static *ecdh.PrivateKey, dev Device, conn *net.UDPC
 	p.hsSize = proto.HandshakeSize(p.psk != nil)
 
 	for i := range cfg.Peers {
-		cp := &cfg.Peers[i]
-		pc := &peerConfig{
-			pub:         cp.PublicKey,
-			routes:      cp.AllowedIPs,
-			hasEndpoint: cp.HasEndpoint(),
-			host:        cp.Host,
-			port:        cp.Port,
-		}
+		pc := newPeerConfig(&cfg.Peers[i])
 		if pc.hasEndpoint {
 			if err := resolveEndpoint(context.Background(), pc); err != nil {
 				return nil, fmt.Errorf("cannot resolve endpoint host %s: %w", pc.host, err)
@@ -107,6 +102,16 @@ func New(cfg *config.Config, static *ecdh.PrivateKey, dev Device, conn *net.UDPC
 		return nil, fmt.Errorf("failed to pre-generate ephemeral keypair: %w", err)
 	}
 	return p, nil
+}
+
+func newPeerConfig(cp *config.Peer) *peerConfig {
+	return &peerConfig{
+		pub:         cp.PublicKey,
+		routes:      cp.AllowedIPs,
+		hasEndpoint: cp.HasEndpoint(),
+		host:        cp.Host,
+		port:        cp.Port,
+	}
 }
 
 // Run processes packets until ctx is cancelled or a fatal I/O error occurs. It
@@ -378,7 +383,7 @@ func (p *Peer) handleHandshake(src netip.AddrPort, pkt []byte, now time.Time) {
 		if !pe.active || pe.serverAddr != src {
 			continue
 		}
-		cfg := p.cfgs[pe.cfgIdx]
+		cfg := pe.cfg
 		key, err := proto.ClientFinish(pkt, p.psk, p.static, cfg.pub[:], pe.state)
 		if err != nil {
 			logx.Debugf("Handshake message from %s is not a response to our initiation: %v", src, err)
@@ -407,7 +412,7 @@ func (p *Peer) handleHandshake(src netip.AddrPort, pkt []byte, now time.Time) {
 		if !pe.active || pe.serverAddr != src {
 			continue
 		}
-		if bytes.Compare(p.staticPub[:], p.cfgs[pe.cfgIdx].pub[:]) > 0 {
+		if bytes.Compare(p.staticPub[:], pe.cfg.pub[:]) > 0 {
 			logx.Debugf("Rekey collision from %s — ignoring (we have higher pub key)", src)
 			return
 		}
@@ -437,7 +442,7 @@ func (p *Peer) handleHandshake(src netip.AddrPort, pkt []byte, now time.Time) {
 	if yielding != nil {
 		logx.Infof("Rekey collision from %s — yielding (we have lower pub key)", src)
 		yielding.active, yielding.state = false, nil
-		if s := t.findByPub(p.cfgs[yielding.cfgIdx].pub); s != nil {
+		if s := t.findByPub(yielding.cfg.pub); s != nil {
 			s.rekeying = false
 		}
 	}

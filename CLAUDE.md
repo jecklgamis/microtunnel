@@ -7,10 +7,11 @@ A simple Linux hub-and-spoke layer 3 overlay network using a TUN virtual interfa
 
 Go module `github.com/jecklgamis/microtunnel` (Go 1.26+). Only dependencies: `gopkg.in/yaml.v3`, `golang.org/x/sys`. Crypto is stdlib only.
 
-- `cmd/microtunnel/main.go` — flags (`-c config.yaml`, `-version`), config load, key load, TUN open, UDP bind, signal handling (SIGTERM/SIGINT stop, SIGUSR1 dumps sessions), then `peer.Run`.
+- `cmd/microtunnel/main.go` — flags (`-c config.yaml`, `-version`), config load, key load, TUN open, UDP bind, signal handling (SIGTERM/SIGINT stop, SIGUSR1 dumps sessions, SIGHUP reloads peers), then `peer.Run` plus `peer.WatchPeers`. `peer.go` implements `microtunnel peer add|remove|list`, `keygen.go` `microtunnel keygen` (subcommands are dispatched on `os.Args[1]` before flag parsing).
 - `internal/proto` — wire protocol. `proto.go` (constants, hex, AES-256-GCM `Seal`/`Open`, PSK key derivation), `handshake.go` (X25519 handshake with identity hiding: `ClientInit`/`ClientFinish`/`ServerRespond`, PEM key loading), `replay.go` (2048-bit sliding window `ReplayWindow`).
-- `internal/config` — `config.go` (YAML parse + validation + defaults), `cidr.go` (IPv4 `Prefix`).
-- `internal/peer` — `peer.go` (`Peer`, `New`, `Run`, TUN/UDP worker loops, data + handshake handlers), `table.go` (session table, routing, `sessionInit`), `housekeeping.go` (rekey/expiry/keepalive/DNS), `listen.go` (UDP socket setup).
+- `internal/config` — `config.go` (YAML parse + validation + defaults), `cidr.go` (IPv4 `Prefix`), `peersdir.go` (`LoadPeersDir`: one-peer-per-file YAML merged into `Config.Peers` by `Load` — `Parse` alone never touches the filesystem; `PeersDirFingerprint` for change detection).
+- `internal/admin` — logic behind the `peer` CLI: `Add` (validate, allocate lowest free overlay /32, write `<peers_dir>/<name>.yaml` atomically via a dot-prefixed tmp file, optionally generate a key pair and a saved spoke config), `Remove`, `List`. Tested against real temp dirs.
+- `internal/peer` — `peer.go` (`Peer`, `New`, `Run`, TUN/UDP worker loops, data + handshake handlers), `table.go` (session table, routing, `sessionInit`), `housekeeping.go` (rekey/expiry/keepalive/DNS), `listen.go` (UDP socket setup), `reload.go` (`Reload`/`ReloadFrom`: live peer-set changes), `watch.go` (`WatchPeers`: polls `peers_dir` every second, applies a change once it is stable for one poll, also reloads on a trigger channel = SIGHUP).
 - `internal/tun` — TUN devices behind `tun.Open(name) (io.ReadWriteCloser, name, error)`: `tun_linux.go` (`/dev/net/tun`, `TUNSETIFF`), `tun_darwin.go` (utun kernel-control socket; the 4-byte AF header is stripped/added in `Read`/`Write`), `tun_other.go` (stub error). `utun.go` holds the platform-neutral, unit-tested utun framing/naming helpers; `configure.go` builds and runs the `ifconfig`/`route` (macOS) or `ip` (Linux) commands for `tunnel_address`/`tunnel_routes` (`Commands` is pure and tested for both OSes).
 - `internal/logx` — timestamped logger.
 
@@ -62,6 +63,7 @@ handshake_cooldown: 5                # seconds between handshake attempts to sam
 worker_threads: 4                    # optional: packet workers (default: min(4, NumCPU), max 32)
 tunnel_address: 10.9.0.2/24          # optional: program assigns this overlay IP to the TUN itself (required on macOS)
 tunnel_routes: [192.168.50.0/24]     # optional: extra CIDRs routed via the TUN (needs tunnel_address)
+peers_dir: peers.d                   # optional: dir of one-peer-per-file YAML (*.yaml/*.yml); makes `peers:` optional; relative to this file
 
 peers:
   - public_key: <hex>
@@ -70,6 +72,9 @@ peers:
       - 10.9.0.0/24
 ```
 Unknown keys are ignored. On macOS use `interface: utun` (kernel assigns `utunN`; a non-`utunN` name is ignored) plus `tunnel_address`, because a utun device only exists once opened — see `config/peer-macos.yaml` and `scripts/run-macos.sh` (runs `sudo ./microtunnel`). When `tunnel_address` is unset the interface is expected to be configured externally (Docker entrypoint / `create-tunnel.sh` on Linux). Limits: 64 peers, 16 `allowed_ips` per peer, interface name ≤ 15 chars. Endpoint hostnames are resolved at startup (failure is fatal) and re-resolved before each reconnect.
+
+### Dynamic peers
+`peers_dir` files hold one peer each (`public_key`, optional `endpoint`, `allowed_ips`; file name = peer name). Duplicate public keys anywhere are a config error. `Peer.Reload` (SIGHUP or directory change) diffs by public key under the table write lock: added peers become known; removed peers' sessions and pending handshakes are dropped at once; changed `allowed_ips` update the live session's routes with no re-handshake; a changed endpoint cancels a pending handshake and is re-resolved. A failed reload (bad file) changes nothing. `peerConfig` objects are replaced wholesale, never mutated, and `pendingHS` holds a `*peerConfig` (not an index) so reloads cannot invalidate in-flight handshakes. Only peers reload; other settings need a restart. Housekeeping runs `dialDue` every tick (rate-limited by `reconnect_interval`) so a peer rejected before the relay loaded it retries quickly; generated spoke configs set `reconnect_interval: 5`.
 
 ### Session Management
 - Sessions live in a flat array (`table.sessions[]`, max 64)
@@ -144,6 +149,7 @@ make check              # gofmt check + vet + race tests
 make test-image         # build golang toolchain image (microtunnel-test:latest)
 make test-using-docker  # run the race-detector suite on Linux via Docker
 make integration-test   # build image, run relay+peer-1+peer-2 with real TUN in Docker, ping+curl
+make dynamic-test       # relay with empty peers_dir; `peer add/remove` while it runs (alice/bob), asserts no relay restart
 make image              # build Docker image (microtunnel-peer:latest)
 make run-shell          # open a bash shell in a fresh container
 make run                # run the image with its default entrypoint (microtunnel-peer container)
@@ -191,6 +197,7 @@ make image
 - `scripts/test-tunnel-using-peer-1.sh [target_ip]` — ping + curl from peer-1 (default target: 10.9.0.3)
 - `scripts/test-tunnel-using-peer-2.sh [target_ip]` — ping + curl from peer-2 (default target: 10.9.0.2)
 - `scripts/run-integration-test.sh` — end-to-end test behind `make integration-test`
+- `scripts/run-dynamic-peers-test.sh` — end-to-end test behind `make dynamic-test` (work dir `build/dyn-test`, removed on exit)
 - `scripts/run-perf-test.sh [base_url]` — runs a Gatling load test container against an Envoy HTTP proxy endpoint (defaults to peer-1's `:15052` on the detected host IP)
 - `scripts/create-tag.sh` — creates a git tag; auto-increments the rc number from the latest tag if `VERSION` env var is not set
 

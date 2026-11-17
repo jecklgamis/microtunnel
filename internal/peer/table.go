@@ -17,10 +17,12 @@ import (
 // MaxPeers bounds both the number of configured peers and live sessions.
 const MaxPeers = config.MaxPeers
 
-// peerConfig is a statically configured peer (from the YAML `peers:` list).
-// It is created at startup and never removed. endpoint and lastAttempt are
-// only touched by the housekeeping goroutine (and by New before any goroutine
-// starts); pub and routes are immutable.
+// peerConfig is a configured peer (from the YAML `peers:` list or peers_dir).
+// Reload replaces it wholesale (never mutates one in place) when a peer is
+// added, removed or changed, so pointers held by pending handshakes stay
+// consistent. endpoint and lastAttempt are only touched by the housekeeping
+// goroutine (and by New/Reload before the object is published); pub and
+// routes are immutable.
 type peerConfig struct {
 	pub         [proto.PubKeyLen]byte
 	routes      []config.Prefix
@@ -67,7 +69,7 @@ type session struct {
 // response.
 type pendingHS struct {
 	active     bool
-	cfgIdx     int
+	cfg        *peerConfig
 	sentAt     time.Time
 	state      *proto.ClientState
 	serverAddr netip.AddrPort
@@ -255,4 +257,9 @@ func u32Addr(ip uint32) netip.Addr {
 	var b [4]byte
 	binary.BigEndian.PutUint32(b[:], ip)
 	return netip.AddrFrom4(b)
+}
+
+// hasCfg reports whether cfg is still a configured peer. Requires the lock.
+func (p *Peer) hasCfg(cfg *peerConfig) bool {
+	return slices.Contains(p.cfgs, cfg)
 }

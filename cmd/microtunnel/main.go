@@ -3,7 +3,9 @@
 //
 // Usage:
 //
-//	microtunnel [-c <config.yaml>]
+//	microtunnel [-c <config.yaml>]          run the tunnel
+//	microtunnel peer add|remove|list ...    manage the relay's peers_dir
+//	microtunnel keygen <name>               create a key pair and print the public key
 package main
 
 import (
@@ -13,6 +15,7 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/jecklgamis/microtunnel/internal/config"
 	"github.com/jecklgamis/microtunnel/internal/logx"
@@ -20,6 +23,9 @@ import (
 	"github.com/jecklgamis/microtunnel/internal/proto"
 	"github.com/jecklgamis/microtunnel/internal/tun"
 )
+
+// peersPollInterval is how often peers_dir is checked for changes.
+const peersPollInterval = time.Second
 
 // version is stamped at build time: -ldflags "-X main.version=1.2.3".
 var version = "dev"
@@ -32,10 +38,18 @@ func main() {
 }
 
 func run() error {
+	if len(os.Args) > 1 {
+		switch os.Args[1] {
+		case "peer":
+			return runPeerCmd(os.Args[2:], os.Stdout, os.Stderr)
+		case "keygen":
+			return runKeygen(os.Args[2:], os.Stdout, os.Stderr)
+		}
+	}
 	configPath := flag.String("c", "peer.yaml", "YAML config file")
 	showVersion := flag.Bool("version", false, "print version and exit")
 	flag.Usage = func() {
-		fmt.Fprintf(flag.CommandLine.Output(), "Usage: %s [-c <config.yaml>]\n", os.Args[0])
+		fmt.Fprintf(flag.CommandLine.Output(), "Usage: %s [-c <config.yaml>]\n       %s peer add|remove|list ...  (see `%s peer help`)\n", os.Args[0], os.Args[0], os.Args[0])
 		flag.PrintDefaults()
 	}
 	flag.Parse()
@@ -130,6 +144,29 @@ func run() error {
 			}
 		}
 	}()
+
+	// SIGHUP, or a change in peers_dir, re-reads the peer list without
+	// restarting or disturbing the other sessions.
+	hup := make(chan os.Signal, 1)
+	signal.Notify(hup, syscall.SIGHUP)
+	trigger := make(chan struct{}, 1)
+	go func() {
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-hup:
+				select {
+				case trigger <- struct{}{}:
+				default: // a reload is already queued
+				}
+			}
+		}
+	}()
+	if cfg.PeersDir != "" {
+		logx.Infof("Watching peers_dir %s (reloads on change; SIGHUP forces a reload)", cfg.PeersDir)
+	}
+	go p.WatchPeers(ctx, *configPath, cfg.PeersDir, peersPollInterval, trigger)
 
 	return p.Run(ctx)
 }

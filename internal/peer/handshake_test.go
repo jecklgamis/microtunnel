@@ -314,7 +314,7 @@ func (o *outEnv) serverReceive(t *testing.T) (resp []byte, sessionKey [proto.Key
 func TestInitiateSendsHandshakeAndRecordsPending(t *testing.T) {
 	o := newOutEnv(t, "psk")
 	o.p.tbl.mu.Lock()
-	err := o.p.initiate(0, time.Now())
+	err := o.p.initiate(o.p.cfgs[0], time.Now())
 	o.p.tbl.mu.Unlock()
 	if err != nil {
 		t.Fatal(err)
@@ -332,7 +332,7 @@ func TestOutboundHandshakeCompletesOnResponse(t *testing.T) {
 		t.Run("psk="+psk, func(t *testing.T) {
 			o := newOutEnv(t, psk)
 			o.p.tbl.mu.Lock()
-			_ = o.p.initiate(0, time.Now())
+			_ = o.p.initiate(o.p.cfgs[0], time.Now())
 			o.p.tbl.mu.Unlock()
 			resp, serverKey, from := o.serverReceive(t)
 
@@ -364,7 +364,7 @@ func TestOutboundHandshakeCompletesOnResponse(t *testing.T) {
 func TestOutboundHandshakeForgedResponseIgnored(t *testing.T) {
 	o := newOutEnv(t, "psk")
 	o.p.tbl.mu.Lock()
-	_ = o.p.initiate(0, time.Now())
+	_ = o.p.initiate(o.p.cfgs[0], time.Now())
 	o.p.tbl.mu.Unlock()
 	resp, serverKey, _ := o.serverReceive(t)
 
@@ -388,7 +388,7 @@ func TestOutboundHandshakeForgedResponseIgnored(t *testing.T) {
 func TestOutboundResponseFromWrongAddressIgnored(t *testing.T) {
 	o := newOutEnv(t, "")
 	o.p.tbl.mu.Lock()
-	_ = o.p.initiate(0, time.Now())
+	_ = o.p.initiate(o.p.cfgs[0], time.Now())
 	o.p.tbl.mu.Unlock()
 	resp, _, _ := o.serverReceive(t)
 	o.p.handleHandshake(mustAddr("203.0.113.5:5040"), resp, time.Now()) // spoofed source
@@ -407,7 +407,7 @@ func TestInitiateFailsWhenNoPendingSlots(t *testing.T) {
 	for i := range o.p.tbl.pending {
 		o.p.tbl.pending[i].active = true
 	}
-	if err := o.p.initiate(0, time.Now()); err == nil {
+	if err := o.p.initiate(o.p.cfgs[0], time.Now()); err == nil {
 		t.Fatal("expected an error with all pending slots in use")
 	}
 }
@@ -439,7 +439,7 @@ func collisionEnv(t *testing.T, aHigher bool) (a *Peer, bKey *ecdh.PrivateKey, b
 
 	a.tbl.mu.Lock()
 	a.tbl.findByPub(pubOf(bk)).rekeying = true
-	if err := a.initiate(0, time.Now()); err != nil {
+	if err := a.initiate(a.cfgs[0], time.Now()); err != nil {
 		t.Fatal(err)
 	}
 	a.tbl.mu.Unlock()

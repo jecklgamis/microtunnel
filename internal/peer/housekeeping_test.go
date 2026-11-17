@@ -17,7 +17,7 @@ func TestHousekeepExpiresPendingHandshake(t *testing.T) {
 	logs := captureLogs(t)
 	now := time.Now()
 	o.p.tbl.mu.Lock()
-	_ = o.p.initiate(0, now)
+	_ = o.p.initiate(o.p.cfgs[0], now)
 	o.p.tbl.mu.Unlock()
 	o.serverReceive(t)
 
@@ -40,7 +40,7 @@ func TestHousekeepTimeoutClearsRekeyingFlag(t *testing.T) {
 	o.p.addSession(t, pubOf(o.serverKey), addrOf(o.server), randKey(1), "10.9.0.0/24")
 	o.p.tbl.mu.Lock()
 	o.p.tbl.findByPub(pubOf(o.serverKey)).rekeying = true
-	_ = o.p.initiate(0, now)
+	_ = o.p.initiate(o.p.cfgs[0], now)
 	o.p.tbl.mu.Unlock()
 	hk(o.p, now.Add(o.p.hsTimeout+time.Second))
 	o.p.tbl.mu.RLock()

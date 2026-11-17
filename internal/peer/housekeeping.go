@@ -54,6 +54,12 @@ func (p *Peer) housekeepingLoop(ctx context.Context) {
 		if now := time.Now(); now.Sub(last) >= p.hkEvery {
 			last = now
 			p.housekeep(ctx, now, w)
+		} else {
+			// Dial/rekey checks are cheap and already rate-limited by
+			// reconnect_interval, so run them every tick: a peer that was
+			// rejected moments ago (e.g. a relay that had not yet loaded it)
+			// retries as soon as the interval allows, not at the next 10s pass.
+			p.dialDue(ctx, now)
 		}
 	}
 }
@@ -72,7 +78,7 @@ func (p *Peer) housekeep(ctx context.Context, now time.Time, w *workerBufs) {
 		if !pe.active || now.Sub(pe.sentAt) < p.hsTimeout {
 			continue
 		}
-		cfg := p.cfgs[pe.cfgIdx]
+		cfg := pe.cfg
 		logx.Warnf("Handshake to %s timed out — will retry in %ds",
 			cfg.endpoint, int(p.reconnect/time.Second))
 		pe.active, pe.state = false, nil
@@ -132,26 +138,27 @@ func (p *Peer) dialDue(ctx context.Context, now time.Time) {
 		return needs && now.Sub(cfg.lastAttempt) >= p.reconnect
 	}
 
-	var candidates []int
+	var candidates []*peerConfig
 	t.mu.RLock()
-	for i, cfg := range p.cfgs {
+	for _, cfg := range p.cfgs {
 		if cfg.hasEndpoint && due(cfg) {
-			candidates = append(candidates, i)
+			candidates = append(candidates, cfg)
 		}
 	}
 	t.mu.RUnlock()
 
-	for _, i := range candidates {
-		cfg := p.cfgs[i]
+	for _, cfg := range candidates {
 		_ = resolveEndpoint(ctx, cfg) // on failure keep the previous address
 
 		t.mu.Lock()
-		if due(cfg) { // state may have changed while we were resolving
+		// State may have changed while we were resolving, including the peer
+		// being removed or replaced by a reload.
+		if p.hasCfg(cfg) && due(cfg) {
 			s := t.findByPub(cfg.pub)
 			if s != nil {
 				s.rekeying = true
 			}
-			if err := p.initiate(i, now); err != nil && s != nil {
+			if err := p.initiate(cfg, now); err != nil && s != nil {
 				s.rekeying = false
 			}
 		}
@@ -163,9 +170,8 @@ func (p *Peer) dialDue(ctx context.Context, now time.Time) {
 // pending entry. It returns immediately; the response is handled by a UDP
 // worker. The old session (if any) keeps forwarding until the response arrives
 // and sessionInit atomically replaces its key. Requires the write lock.
-func (p *Peer) initiate(cfgIdx int, now time.Time) error {
+func (p *Peer) initiate(cfg *peerConfig, now time.Time) error {
 	t := &p.tbl
-	cfg := p.cfgs[cfgIdx]
 	cfg.lastAttempt = now
 
 	slot := -1
@@ -192,7 +198,7 @@ func (p *Peer) initiate(cfgIdx int, now time.Time) error {
 	}
 	t.pending[slot] = pendingHS{
 		active:     true,
-		cfgIdx:     cfgIdx,
+		cfg:        cfg,
 		sentAt:     now,
 		state:      st,
 		serverAddr: cfg.endpoint,

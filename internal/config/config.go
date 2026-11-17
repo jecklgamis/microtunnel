@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/netip"
 	"os"
+	"path/filepath"
 	"runtime"
 	"strconv"
 	"strings"
@@ -43,6 +44,9 @@ type Peer struct {
 	Port        int
 	AllowedIPs  []Prefix
 	hasEndpoint bool
+	// Name is the file name (without extension) for peers loaded from
+	// peers_dir; empty for peers listed inline in the main config.
+	Name string
 }
 
 // HasEndpoint reports whether we initiate connections to this peer.
@@ -75,7 +79,13 @@ type Config struct {
 	// (e.g. scripts/create-tunnel.sh on Linux).
 	TunnelAddress netip.Prefix
 	TunnelRoutes  []netip.Prefix
-	Peers         []Peer
+
+	// PeersDir, when set, is a directory of one-peer-per-file YAML (*.yaml,
+	// *.yml). Load merges those peers with the inline `peers:` list, and the
+	// running daemon re-reads it when it changes. A relative path is resolved
+	// against the config file's directory by Load.
+	PeersDir string
+	Peers    []Peer
 }
 
 type rawPeer struct {
@@ -101,6 +111,7 @@ type rawConfig struct {
 	WorkerThreads     *int      `yaml:"worker_threads"`
 	TunnelAddress     string    `yaml:"tunnel_address"`
 	TunnelRoutes      []string  `yaml:"tunnel_routes"`
+	PeersDir          string    `yaml:"peers_dir"`
 	Peers             []rawPeer `yaml:"peers"`
 }
 
@@ -120,6 +131,19 @@ func Load(path string) (*Config, error) {
 	cfg, err := Parse(data)
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", path, err)
+	}
+	if cfg.PeersDir != "" {
+		if !filepath.IsAbs(cfg.PeersDir) {
+			cfg.PeersDir = filepath.Join(filepath.Dir(path), cfg.PeersDir)
+		}
+		extra, err := LoadPeersDir(cfg.PeersDir)
+		if err != nil {
+			return nil, fmt.Errorf("%s: %w", path, err)
+		}
+		cfg.Peers = append(cfg.Peers, extra...)
+		if err := checkPeers(cfg.Peers); err != nil {
+			return nil, fmt.Errorf("%s: %w", path, err)
+		}
 	}
 	return cfg, nil
 }
@@ -147,6 +171,7 @@ func Parse(data []byte) (*Config, error) {
 		HandshakeTimeout:  orDefault(raw.HandshakeTimeout, DefaultHSTimeout),
 		HandshakeCooldown: orDefault(raw.HandshakeCooldown, DefaultHSCooldown),
 		WorkerThreads:     orDefault(raw.WorkerThreads, 0),
+		PeersDir:          raw.PeersDir,
 	}
 	if raw.PrivateKeyFile != nil {
 		cfg.PrivateKeyFile = *raw.PrivateKeyFile
@@ -188,6 +213,9 @@ func Parse(data []byte) (*Config, error) {
 		cfg.Peers = append(cfg.Peers, p)
 	}
 
+	if err := checkPeers(cfg.Peers); err != nil {
+		return nil, err
+	}
 	if err := cfg.validate(); err != nil {
 		return nil, err
 	}
@@ -195,6 +223,21 @@ func Parse(data []byte) (*Config, error) {
 		cfg.WorkerThreads = min(DefaultWorkers, runtime.NumCPU())
 	}
 	return cfg, nil
+}
+
+// checkPeers rejects too many peers and duplicate public keys.
+func checkPeers(peers []Peer) error {
+	if len(peers) > MaxPeers {
+		return fmt.Errorf("too many peers (max %d)", MaxPeers)
+	}
+	seen := make(map[[proto.PubKeyLen]byte]bool, len(peers))
+	for _, p := range peers {
+		if seen[p.PublicKey] {
+			return fmt.Errorf("duplicate peer public_key %s", proto.BytesToHex(p.PublicKey[:8])+"...")
+		}
+		seen[p.PublicKey] = true
+	}
+	return nil
 }
 
 func parsePeer(rp rawPeer) (Peer, error) {
@@ -241,8 +284,8 @@ func (c *Config) validate() error {
 		return errors.New("interface is required")
 	case len(c.Interface) > 15:
 		return fmt.Errorf("interface name %q is longer than 15 characters", c.Interface)
-	case len(c.Peers) == 0:
-		return errors.New("at least one peer is required")
+	case len(c.Peers) == 0 && c.PeersDir == "":
+		return errors.New("at least one peer is required (or set peers_dir)")
 	case c.Port <= 0 || c.Port > 65535:
 		return fmt.Errorf("port must be 1-65535 (got %d)", c.Port)
 	case c.KeepaliveInterval <= 0:

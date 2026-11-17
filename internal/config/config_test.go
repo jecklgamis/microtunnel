@@ -1,6 +1,7 @@
 package config
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -173,7 +174,7 @@ func TestParseTooManyPeers(t *testing.T) {
 	var b strings.Builder
 	b.WriteString("interface: t0\npeers:\n")
 	for i := 0; i < MaxPeers+1; i++ {
-		b.WriteString("  - public_key: " + pubA + "\n")
+		b.WriteString(fmt.Sprintf("  - public_key: %064x\n", i+1))
 	}
 	if _, err := Parse([]byte(b.String())); err == nil || !strings.Contains(err.Error(), "too many peers") {
 		t.Fatalf("err=%v", err)
@@ -182,7 +183,7 @@ func TestParseTooManyPeers(t *testing.T) {
 	b.Reset()
 	b.WriteString("interface: t0\npeers:\n")
 	for i := 0; i < MaxPeers; i++ {
-		b.WriteString("  - public_key: " + pubA + "\n")
+		b.WriteString(fmt.Sprintf("  - public_key: %064x\n", i+1))
 	}
 	if _, err := Parse([]byte(b.String())); err != nil {
 		t.Fatalf("MaxPeers rejected: %v", err)
@@ -287,5 +288,151 @@ func TestParseTunnelAddressRejectsInvalid(t *testing.T) {
 				t.Fatalf("err=%v, want containing %q", err, tc.want)
 			}
 		})
+	}
+}
+
+func TestParseDuplicatePeerKey(t *testing.T) {
+	y := minimalYAML + "  - public_key: " + pubA + "\n"
+	if _, err := Parse([]byte(y)); err == nil || !strings.Contains(err.Error(), "duplicate peer public_key") {
+		t.Fatalf("err=%v", err)
+	}
+}
+
+func writePeerFile(t *testing.T, dir, name, body string) {
+	t.Helper()
+	if err := os.WriteFile(filepath.Join(dir, name), []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func writeConfig(t *testing.T, dir, body string) string {
+	t.Helper()
+	path := filepath.Join(dir, "relay.yaml")
+	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+func TestLoadPeersDirMergesWithInline(t *testing.T) {
+	dir := t.TempDir()
+	pd := filepath.Join(dir, "peers.d")
+	if err := os.Mkdir(pd, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writePeerFile(t, pd, "laptop.yaml", "public_key: "+pubB+"\nallowed_ips: [10.9.0.5/32]\n")
+	writePeerFile(t, pd, "notes.txt", "ignored")
+	writePeerFile(t, pd, ".hidden.yaml", "garbage: [")
+	writePeerFile(t, pd, "laptop.yaml.tmp", "garbage: [")
+
+	// peers_dir is relative: resolved against the config file's directory.
+	path := writeConfig(t, dir, minimalYAML+"peers_dir: peers.d\n")
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.PeersDir != pd {
+		t.Fatalf("PeersDir=%q want %q", cfg.PeersDir, pd)
+	}
+	if len(cfg.Peers) != 2 {
+		t.Fatalf("peers=%d want 2", len(cfg.Peers))
+	}
+	got := cfg.Peers[1]
+	if got.Name != "laptop" || len(got.AllowedIPs) != 1 || got.AllowedIPs[0].String() != "10.9.0.5/32" {
+		t.Fatalf("dir peer = %+v", got)
+	}
+	if cfg.Peers[0].Name != "" {
+		t.Fatalf("inline peer should have no Name, got %q", cfg.Peers[0].Name)
+	}
+}
+
+func TestLoadPeersDirAllowsZeroPeers(t *testing.T) {
+	dir := t.TempDir()
+	pd := filepath.Join(dir, "peers.d")
+	if err := os.Mkdir(pd, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	path := writeConfig(t, dir, "interface: t0\npeers_dir: "+pd+"\n")
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cfg.Peers) != 0 {
+		t.Fatalf("peers=%d", len(cfg.Peers))
+	}
+	// Without peers_dir, zero peers is still an error.
+	if _, err := Parse([]byte("interface: t0\n")); err == nil {
+		t.Fatal("zero peers without peers_dir must be rejected")
+	}
+}
+
+func TestLoadPeersDirErrors(t *testing.T) {
+	dir := t.TempDir()
+	pd := filepath.Join(dir, "peers.d")
+	if err := os.Mkdir(pd, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	path := writeConfig(t, dir, "interface: t0\npeers_dir: "+pd+"\n")
+
+	for name, tc := range map[string]struct{ file, body, want string }{
+		"bad yaml":  {"a.yaml", "public_key: [", "a.yaml"},
+		"no key":    {"a.yaml", "endpoint: x:1\n", "public_key is required"},
+		"bad cidr":  {"a.yaml", "public_key: " + pubA + "\nallowed_ips: [nope]\n", "invalid CIDR"},
+		"duplicate": {"b.yaml", "public_key: " + pubA + "\n", "duplicate peer public_key"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			_ = os.Remove(filepath.Join(pd, "a.yaml"))
+			_ = os.Remove(filepath.Join(pd, "b.yaml"))
+			if name == "duplicate" {
+				writePeerFile(t, pd, "a.yaml", "public_key: "+pubA+"\n")
+			}
+			writePeerFile(t, pd, tc.file, tc.body)
+			_, err := Load(path)
+			if err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("err=%v want substring %q", err, tc.want)
+			}
+		})
+	}
+
+	// A missing directory is an error too (typo protection).
+	path = writeConfig(t, dir, "interface: t0\npeers_dir: "+filepath.Join(dir, "nope")+"\n")
+	if _, err := Load(path); err == nil || !strings.Contains(err.Error(), "peers_dir") {
+		t.Fatalf("missing dir err=%v", err)
+	}
+}
+
+func TestPeersDirFingerprint(t *testing.T) {
+	pd := t.TempDir()
+	if PeersDirFingerprint(filepath.Join(pd, "nope")) != "" {
+		t.Fatal("missing dir should fingerprint to empty")
+	}
+	empty := PeersDirFingerprint(pd)
+	writePeerFile(t, pd, "a.yaml", "public_key: "+pubA+"\n")
+	one := PeersDirFingerprint(pd)
+	if one == empty {
+		t.Fatal("adding a file must change the fingerprint")
+	}
+	writePeerFile(t, pd, "ignored.txt", "x")
+	writePeerFile(t, pd, "a.yaml.tmp", "x")
+	if PeersDirFingerprint(pd) != one {
+		t.Fatal("non-peer files must not change the fingerprint")
+	}
+	writePeerFile(t, pd, "a.yaml", "public_key: "+pubB+"\n")
+	if PeersDirFingerprint(pd) == one {
+		t.Fatal("editing a file must change the fingerprint")
+	}
+	if err := os.Remove(filepath.Join(pd, "a.yaml")); err != nil {
+		t.Fatal(err)
+	}
+	if PeersDirFingerprint(pd) != empty {
+		t.Fatal("removing the file must restore the fingerprint")
+	}
+}
+
+func TestPeerName(t *testing.T) {
+	for in, want := range map[string]string{"a.yaml": "a", "b.yml": "b", "/x/y/c-1.yaml": "c-1"} {
+		if got := PeerName(in); got != want {
+			t.Errorf("PeerName(%q)=%q want %q", in, got, want)
+		}
 	}
 }
