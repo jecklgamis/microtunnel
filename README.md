@@ -42,17 +42,10 @@ The relay is suited for low-to-moderate traffic between a small number of peers,
 ## Features
 
 ### Security
-- **X25519 Diffie-Hellman key exchange** — ephemeral + static key pairs for forward secrecy and mutual authentication
-- **AES-256-GCM encryption** — all tunnel traffic is authenticated and encrypted
-- **Identity hiding** — static public keys are encrypted inside the handshake; passive observers cannot identify peers
-- **PSK authentication** — optional HMAC-SHA256 over the handshake using a pre-shared key
-- **Replay protection** — 2048-bit sliding window per session rejects replayed or reordered packets
-- **AllowedIPs routing** — enforces a per-peer IP allowlist; packets with unexpected source IPs are dropped
-- **Session rekeying** — peers re-handshake every 3 minutes, rotating the session key automatically
-- **DoS mitigations** — 5-second handshake cooldown per address and per public key
+X25519 key exchange with forward secrecy, AES-256-GCM, identity hiding, optional PSK, replay protection, per-peer AllowedIPs and automatic rekeying. Details, the handshake and the review notes are in [docs/security.md](docs/security.md); how it compares with WireGuard, OpenVPN and others is in [docs/comparison.md](docs/comparison.md).
 
 ### Limitations
-- **Linux and macOS** — Linux uses `/dev/net/tun`, macOS uses a `utun` device (see [Running on macOS](#running-on-macos)). Windows and BSD are not supported. The whole test suite runs natively on both, since the tests use in-memory TUN devices
+- **Linux and macOS** — Linux uses `/dev/net/tun`, macOS uses a `utun` device (see [Running Natively](#macos)). Windows and BSD are not supported. The whole test suite runs natively on both, since the tests use in-memory TUN devices
 - **IPv4 only** — TUN packets are validated as IPv4; IPv6 and non-IP traffic are dropped
 - **UDP transport** — no packet ordering guarantees; packet loss is not retransmitted
 - **Single-process** — a configurable pool of worker goroutines (`worker_threads`, default `min(4, nproc)`) parallelizes packet crypto across cores, but it's still one process per peer/relay with no multi-host failover
@@ -68,97 +61,110 @@ The relay is suited for low-to-moderate traffic between a small number of peers,
 sudo apt install iproute2 make openssl   # plus Go 1.26+ from https://go.dev/dl/
 ```
 
-## Running Natively (Linux)
+## Running Natively
 
-Each peer runs on its own Linux host (or its own network namespace/VM). Running relay + both peers as bare native processes side by side on **one** host does not work: once `10.9.0.2` and `10.9.0.3` are both assigned to interfaces on the same machine, the kernel treats them as local addresses and any reply generated on one TUN device gets routed straight back via `lo` instead of going out that device to be re-encrypted — the tunnel never sees the return traffic, no matter how ports/interfaces/configs are set up. This isn't specific to microtunnel; the same thing happens with WireGuard or any other TUN-based overlay if you assign multiple overlapping-subnet addresses on one host's routing table. For same-machine local testing, use [Running With Docker](#running-with-docker) below, which gives each peer its own network namespace via a container.
+Install the package, then configure each machine with `microtunnel init`. This walkthrough sets up one relay and one peer. A peer is any machine behind NAT that dials out to the relay; the same program is both, and the config decides the role.
 
-**1. Install dependencies** (all three hosts)
+You need a relay with a public address (below it is `relay.example.com`) and UDP 5040 open to it. Replace `relay.example.com` with your own host or IP.
+
+### Linux (deb package)
+
+**1. Install** on both machines. Download the package for your architecture from the [releases page](https://github.com/jecklgamis/microtunnel/releases) (use the `.rpm` and `rpm -i` on Red Hat family systems):
+
 ```bash
-sudo apt install iproute2
+sudo apt install ./microtunnel_<version>_amd64.deb
 ```
 
-**2. Build** (once; copy the static `microtunnel` binary to the other hosts — it can be cross-built, e.g. `GOARCH=arm64 make build`)
+**2. On the relay:** create its config and start it.
+
 ```bash
-make build
+sudo microtunnel init relay --endpoint relay.example.com:5040
+sudo systemctl enable --now microtunnel
 ```
 
-**3. Copy keys and config, create the TUN interface, and edit `endpoint:` — each host only needs its own peer's files.** Assume the relay's public/reachable address is `203.0.113.10`.
+`init relay` generates the relay's key and a random pre-shared key, and writes `/etc/microtunnel/microtunnel.yaml`. It prints the relay's **public key** and a ready-made `init peer` line that contains the pre-shared key. Send that line to the peer over a secure channel.
 
-**On the relay host:**
+**3. On the peer:** create its config with the line the relay printed.
+
 ```bash
-sudo mkdir -p /etc/microtunnel
-sudo cp config/relay.key config/relay.yaml /etc/microtunnel/
-sudo ./scripts/create-tunnel.sh microtunnel0 10.9.0.1/24
-sudo ./microtunnel -c /etc/microtunnel/relay.yaml
+MICROTUNNEL_PSK=<psk> sudo -E microtunnel init peer \
+  --relay relay.example.com:5040 --relay-key <relay public key>
+#   public key:  d3eb...
 ```
 
-**On the peer-1 host:**
+**4. On the relay:** register the peer's public key. It prints the overlay address assigned to the peer.
+
 ```bash
-sudo mkdir -p /etc/microtunnel
-sudo cp config/peer-1.key config/peer-1.yaml /etc/microtunnel/
-sudo ./scripts/create-tunnel.sh microtunnel0 10.9.0.2/24 10.9.0.0/24
-# edit /etc/microtunnel/peer-1.yaml: peers[0].endpoint: 203.0.113.10:5040
-sudo ./microtunnel -c /etc/microtunnel/peer-1.yaml
+sudo microtunnel peer add laptop -public-key d3eb...
+# laptop: 10.9.0.2/32
 ```
 
-**On the peer-2 host:**
+The relay picks this up live; no restart is needed.
+
+**5. On the peer:** apply that address (the peer's key is kept) and start it.
+
 ```bash
-sudo mkdir -p /etc/microtunnel
-sudo cp config/peer-2.key config/peer-2.yaml /etc/microtunnel/
-sudo ./scripts/create-tunnel.sh microtunnel0 10.9.0.3/24 10.9.0.0/24
-# edit /etc/microtunnel/peer-2.yaml: peers[0].endpoint: 203.0.113.10:5040
-sudo ./microtunnel -c /etc/microtunnel/peer-2.yaml
+MICROTUNNEL_PSK=<psk> sudo -E microtunnel init peer \
+  --relay relay.example.com:5040 --relay-key <relay public key> --address 10.9.0.2/24 --force
+sudo systemctl enable --now microtunnel
 ```
 
-**4. Test** (from the relay host)
+**6. Test**
+
 ```bash
-ping 10.9.0.2   # relay → peer-1
-ping 10.9.0.3   # relay → peer-2
+ping 10.9.0.1                       # on the peer: the relay
+sudo microtunnel peer list          # on the relay: laptop should be "connected"
+sudo journalctl -u microtunnel -f   # logs, on either machine
 ```
 
----
+Running a relay and several peers as native processes on **one** host does not work: once `10.9.0.2` and `10.9.0.3` are both local addresses, the kernel routes replies back through `lo` instead of the TUN device. This applies to any TUN overlay, WireGuard included. For same-machine testing use [Docker](#running-with-docker), which gives each peer its own network namespace.
 
-## Running on macOS
+### macOS
 
-The binary runs natively on macOS (Apple silicon and Intel) using a `utun` device. Creating one requires **root**, so run it with `sudo`.
+A Mac is an ordinary peer; the relay side is the same as above. macOS has no `systemctl` and creates the tunnel as a `utun` device, which needs root, so you run microtunnel in the foreground with `sudo`.
 
-macOS differs from Linux in two ways, both handled by config:
-
-- Tunnel devices are named `utunN` and the kernel picks the next free one, so set `interface: utun` (a specific `utun5` also works; any other name is ignored and the kernel chooses).
-- A utun device only exists once the process has opened it, so the helper script `create-tunnel.sh` cannot pre-create it. Instead the program configures the interface itself: set **`tunnel_address`** (this Mac's overlay IP, e.g. `10.9.0.4/24`) and optionally **`tunnel_routes`** (extra CIDRs to route through the tunnel). The overlay subnet is routed automatically, and the interface MTU is set to 1428. These two keys also work on Linux.
-
-A Mac is a regular peer (behind NAT, dialing out to the relay):
+**1. Install.** Either build from source (Go 1.26+, `brew install go`):
 
 ```bash
-brew install go                      # Go 1.26+
 git clone git@github.com:jecklgamis/microtunnel.git && cd microtunnel
-make build                           # builds ./microtunnel for this Mac  (`make macos` builds arm64 + amd64 into build/)
-
-# 1. Generate this Mac's key pair (openssl: `brew install openssl` if needed)
-cd config && ../scripts/generate-peer-keys.sh my-mac && cd ..
-./scripts/extract-pubkey-hex.sh config/my-mac.crt   # give this hex key to the relay's operator
-
-# 2. On the relay, add the Mac as a peer:
-#      - public_key: <hex from above>
-#        allowed_ips: [10.9.0.4/32]
-
-# 3. Copy config/peer-macos.yaml, fill in the relay's public key, endpoint and PSK,
-#    point private_key_file at config/my-mac.key, then:
-./scripts/run-macos.sh my-mac.yaml   # runs `sudo ./microtunnel -c my-mac.yaml`
+make install                 # builds for this Mac and installs /usr/local/bin/microtunnel
 ```
 
-Check it from another terminal:
+or download `microtunnel-darwin-arm64` (Apple silicon) or `microtunnel-darwin-amd64` (Intel) from the [releases page](https://github.com/jecklgamis/microtunnel/releases), then `xattr -d com.apple.quarantine <file>`, `chmod +x <file>` and move it to `/usr/local/bin/microtunnel`.
+
+**2. Set up the relay** as in step 2 of the Linux walkthrough (any Linux relay works).
+
+**3. On the Mac:** create its config. `sudo env` passes the pre-shared key through `sudo`.
 
 ```bash
-ifconfig | grep -A3 utun            # your tunnel interface with 10.9.0.4
-netstat -rn | grep 10.9.0           # route for 10.9.0.0/24 via that utun
+sudo env MICROTUNNEL_PSK=<psk> microtunnel init peer \
+  --relay relay.example.com:5040 --relay-key <relay public key>
+#   public key:  d3eb...
+```
+
+**4. On the relay:** `sudo microtunnel peer add mac -public-key d3eb...` (prints the assigned address, e.g. `10.9.0.2/32`).
+
+**5. On the Mac:** apply the address, then run it.
+
+```bash
+sudo env MICROTUNNEL_PSK=<psk> microtunnel init peer \
+  --relay relay.example.com:5040 --relay-key <relay public key> --address 10.9.0.2/24 --force
+sudo microtunnel             # reads /etc/microtunnel/microtunnel.yaml; leave it running
+```
+
+**6. Test** from another terminal:
+
+```bash
 ping 10.9.0.1                       # the relay
+ifconfig | grep -A3 utun            # the tunnel interface and its overlay address
+netstat -rn | grep 10.9.0           # route for the overlay subnet
 ```
 
 Notes:
-- If the Mac is also the machine hosting the relay for local experiments, use [Docker](#running-with-docker) instead; running relay and peers on one host doesn't work for the reason given under [Running Natively](#running-natively-linux).
-- macOS may show a prompt to allow incoming network connections for the binary the first time; allow it if you run an inbound-only peer.
-- The utun device code can't be covered by the automated tests (they need root); the framing, interface-name, command-generation and config logic are unit-tested, and the Linux equivalent is verified in Docker. Please report anything odd on real hardware.
+- The interface is named `utunN` and chosen by the kernel, so `interface:` in the config is ignored on macOS. The MTU is set to 1428.
+- To also send another network through the tunnel, add it to `tunnel_routes` in the Mac's config and restart.
+- macOS may ask once whether to allow incoming connections for the binary; allow it.
+- The utun code needs root, so it isn't covered by the automated tests. The framing, command generation and config logic are unit-tested, and the Linux equivalent is verified in Docker. Please report anything odd on real hardware.
 
 ---
 
@@ -412,134 +418,6 @@ The `peer` tests run complete relay/peer topologies inside one process over loop
 Example request path for `curl http://<host_ip>:15052` against peer-1, routed through the tunnel to peer-2's nginx:
 
 ![curl request path](docs/images/curl-request-path.png)
-
-## Security Details
-
-### Handshake Flow
-
-```
-INITIATOR (peer-1)                             RESPONDER (relay)
-──────────────────                             ─────────────────
-
-Generate eph_c keypair
-Encrypt static_pub_c with
-  SHA-256(DH(eph_c, static_pub_s))
-Compute HMAC-SHA256(psk, ...)
-
-  ──── HANDSHAKE INIT ────────────────────────────>
-       [8 magic]
-       [32 eph_pub_c]
-       [48 AES-GCM(static_pub_c)]
-       [32 HMAC(psk)]  (if PSK)
-
-                                                Verify HMAC (if PSK)
-                                                Decrypt static_pub_c
-                                                  using DH(eph_c, static_s)
-                                                Look up peer config by static_pub_c
-                                                Generate eph_s keypair (pre-generated)
-                                                Encrypt static_pub_s with
-                                                  SHA-256(DH(eph_s, eph_c))
-                                                Derive session key (see below)
-                                                Save old key as prev_key (90s grace)
-                                                Reset replay window
-                                                Pre-generate next eph keypair
-
-  <─── HANDSHAKE RESPONSE ────────────────────────
-       [8 magic]
-       [32 eph_pub_s]
-       [48 AES-GCM(static_pub_s)]
-       [32 HMAC(psk)]  (if PSK)
-
-Verify HMAC (if PSK)
-Decrypt static_pub_s
-  using DH(eph_s, eph_c)
-Verify static_pub_s matches config
-Derive same session key
-Save old key as prev_key (90s grace)
-Reset replay window, send_seq=0
-
-  ──── DATA (AES-256-GCM, seq=1) ─────────────────>
-  <─── DATA (AES-256-GCM, seq=1) ─────────────────
-```
-
-Both sides retain the old session key for 90 seconds (`prev_key` grace period) to decrypt in-flight packets during the switchover. Prev-key packets bypass the replay window to prevent old sequence numbers from poisoning the new session.
-
-### Handshake Wire Format
-
-```
-[8 magic][32 eph_pub][48 AES-256-GCM(static_pub)][32 HMAC-SHA256(psk,...)]?
-```
-
-### Session Key Derivation
-
-```
-SHA-256(
-  DH(eph_c, eph_s)        ||
-  DH(static_c, eph_s)     ||
-  DH(eph_c, static_s)     ||
-  client_eph_pub          ||
-  server_eph_pub          ||
-  client_static_pub       ||
-  server_static_pub
-)
-```
-
-### Data Packets
-
-```
-[12-byte IV][AES-256-GCM ciphertext of (8-byte magic + 8-byte seq + payload)][16-byte GCM tag]
-```
-
-Magic is `0xdeadbeefcafebabe`. Packets with a bad magic header, invalid GCM tag, or replayed sequence number are silently dropped.
-
-## Comparison with Alternatives
-
-| | **microtunnel** | **WireGuard** | **OpenVPN** | **IPsec (strongSwan)** | **GRE** | **Tinc** |
-|---|---|---|---|---|---|---|
-| **Layer** | L3 (TUN) | L3 (TUN) | L3/L2 (TUN/TAP) | L3 | L3 | L2/L3 |
-| **Transport** | UDP | UDP | UDP/TCP | ESP/UDP | IP proto 47 | UDP/TCP |
-| **Topology** | Hub-and-spoke | Mesh or point-to-point | Hub-and-spoke or mesh | Point-to-point or mesh | Point-to-point | Mesh |
-| **Key exchange** | X25519 (custom) | X25519 (Noise protocol) | TLS (RSA/ECDSA) | IKEv2 (RSA/ECC) | None | Ed25519 |
-| **Encryption** | AES-256-GCM | ChaCha20-Poly1305 | AES-256-GCM | AES-256-GCM | None | AES-256-GCM |
-| **Identity hiding** | Yes | Yes | No | No | No | No |
-| **NAT traversal** | Yes (outbound peers) | Yes | Yes | Partial (NAT-T) | No | Yes |
-| **Replay protection** | Yes (2048-bit window) | Yes | Yes | Yes | No | Yes |
-| **PSK support** | Yes | Yes | No | Yes | No | No |
-| **Rekeying** | Every 3 min | Every 3 min (180s) | Configurable | IKEv2 rekeying | No | No |
-| **Kernel module** | No (userspace) | Yes | No (userspace) | Partial (xfrm) | Yes | No |
-| **IPv6 support** | No | Yes | Yes | Yes | Yes | Yes |
-| **Platforms** | Linux, macOS | Linux, macOS, Windows, BSD | Cross-platform | Cross-platform | Linux | Cross-platform |
-| **Throughput** | Low-medium (userspace, multi-goroutine) | High (kernel) | Medium | High (kernel) | High (kernel) | Medium |
-| **Lines of code** | ~2,100 (Go) | ~4,000 (kernel) | ~100,000+ | ~500,000+ | — | ~50,000 |
-| **Purpose** | Simple/small-scale | Production | Production | Production | Infrastructure | Mesh VPN |
-
----
-
-## Security Review
-
-The original C implementation was reviewed for memory safety, injection vulnerabilities and cryptographic correctness; no high-confidence exploitable vulnerabilities were found. The Go port has **not** been independently audited. Notes carried over from that review:
-
-| Finding (C implementation) | Status in the Go port |
-|---------|------------------------|
-| `strcpy()` after TUNSETIFF ioctl, unbounded `sprintf()` in `bytes_to_hex()` | No longer applicable — Go is memory-safe, and the TUN name goes through `unix.Ifreq` |
-| Unquoted `${PEER_ROUTES}` expansion in `scripts/docker-entrypoint.sh` | Unchanged; false positive — intentional word-splitting of a trusted operator-set Docker env var; no untrusted input path |
-| `TUNNEL_NAME` in sysctl command in `scripts/create-tunnel.sh` | Unchanged; false positive — always hardcoded or set by the container operator who already has root |
-
-Cryptography uses only the Go standard library (`crypto/ecdh` X25519, `crypto/aes` + GCM, `crypto/hmac`, `crypto/sha256`). X25519 results that are all-zero (low-order peer points) are rejected, and HMAC and identity comparisons are constant-time.
-
-### Behavior differences from the C implementation
-
-The wire protocol and YAML format are unchanged. The port deliberately tightens a few behaviors:
-
-- **Keepalive/expiry:** only authenticated, non-replayed packets refresh a session's idle timer. (The C code refreshed it for any datagram from the peer's address, so spoofed junk could keep a dead session alive.)
-- **Non-IPv4 payloads** received from a peer are dropped. (The C code passed them to the TUN device without applying the AllowedIPs source check.)
-- **Simultaneous-rekey tie-break** now works when both sides dial each other. (In C, a peer's initiation arriving from the address we had dialed was classified as a failed *response*, so the "higher public key wins" branch was unreachable there.) A forged packet can no longer cancel a pending handshake.
-- **Unknown peers get no reply:** the responder checks the initiator's identity *before* answering the handshake.
-- **DNS** re-resolution no longer happens while holding the session-table lock.
-- **Dynamic peers** (new): `peers_dir`, hot reload (`SIGHUP` or automatic), the admin socket, the enrollment service and the `peer`/`keygen`/`enroll`/`join` subcommands have no C equivalent. Duplicate peer public keys are now rejected.
-- **Config:** an empty `pre_shared_key`, a peer without `public_key`, and interface names longer than 15 characters are rejected instead of being silently accepted.
-
----
 
 ## References
 * https://www.kernel.org/doc/Documentation/networking/tuntap.txt

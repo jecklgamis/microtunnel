@@ -28,7 +28,7 @@ rpm: BIN_VERSION = $(RPM_VERSION)
 LDFLAGS = -s -w -X main.version=$(BIN_VERSION)
 GOBUILD  = CGO_ENABLED=0 GOOS=linux $(GO) build -trimpath -ldflags "$(LDFLAGS)"
 
-.PHONY: all build linux macos \
+.PHONY: all build install uninstall linux macos \
         test test-race vet fmt fmt-check check test-image test-using-docker \
         image integration-test dynamic-test enroll-test init-test \
         deb rpm clean FORCE
@@ -41,6 +41,22 @@ all: build
 build:
 	CGO_ENABLED=0 $(GO) build -trimpath -ldflags "$(LDFLAGS)" -o $(BINARY) $(PKG)
 	chmod +x $(BINARY)
+
+# Builds for this machine, then installs to $(PREFIX)/bin (default /usr/local/bin, which is
+# on PATH on macOS). Uses sudo for the copy only when the directory isn't writable, so the
+# build itself never runs as root. Override with e.g. `make install PREFIX=$$HOME/.local`.
+PREFIX ?= /usr/local
+BINDIR  = $(DESTDIR)$(PREFIX)/bin
+SUDO    = $(shell d="$(BINDIR)"; while [ ! -e "$$d" ]; do d=$$(dirname "$$d"); done; [ -w "$$d" ] || echo sudo)
+
+install: build
+	$(SUDO) install -d $(BINDIR)
+	$(SUDO) install -m 755 $(BINARY) $(BINDIR)/$(BINARY)
+	@echo "Installed $(BINDIR)/$(BINARY)"
+	@echo "On macOS run it with sudo (creating a utun device needs root): sudo microtunnel -c <config>"
+
+uninstall:
+	$(SUDO) rm -f $(BINDIR)/$(BINARY)
 
 # Static Linux binaries (no libc needed), one per architecture. The packages use these too.
 linux: build/$(BINARY)-linux-amd64 build/$(BINARY)-linux-arm64
