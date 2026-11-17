@@ -156,8 +156,6 @@ make integration-test   # build image, run relay+peer-1+peer-2 with real TUN in 
 make dynamic-test       # relay with empty peers_dir; `peer add/remove` while it runs (alice/bob), asserts no relay restart
 make enroll-test        # admin socket + enrollment: `peer add -socket` (carol), token + `join` (dave), removal, spent token
 make image              # build Docker image (microtunnel-peer:latest)
-make run-shell          # open a bash shell in a fresh container
-make run                # run the image with its default entrypoint (microtunnel-peer container)
 make deb                # build .deb (DEB_ARCH=amd64|arm64; output: build/microtunnel_<ver>_<arch>.deb)
 make rpm                # build .rpm (RPM_ARCH=x86_64|aarch64; output: build/rpm/RPMS/)
 make clean              # remove binary and build artifacts

@@ -28,8 +28,10 @@ rpm: BIN_VERSION = $(RPM_VERSION)
 LDFLAGS = -s -w -X main.version=$(BIN_VERSION)
 GOBUILD  = CGO_ENABLED=0 GOOS=linux $(GO) build -trimpath -ldflags "$(LDFLAGS)"
 
-.PHONY: all build linux macos test test-race vet fmt fmt-check check image run-shell run test-image \
-        test-using-docker integration-test dynamic-test enroll-test deb rpm clean FORCE
+.PHONY: all build linux macos \
+        test test-race vet fmt fmt-check check test-image test-using-docker \
+        image integration-test dynamic-test enroll-test \
+        deb rpm clean FORCE
 
 all: build
 
@@ -40,26 +42,21 @@ build:
 	CGO_ENABLED=0 $(GO) build -trimpath -ldflags "$(LDFLAGS)" -o $(BINARY) $(PKG)
 	chmod +x $(BINARY)
 
-# Release binaries for Linux (static, no libc needed), named per architecture.
-linux: build/$(BINARY)-linux-amd64	 build/$(BINARY)-linux-arm64
+# Static Linux binaries (no libc needed), one per architecture. The packages use these too.
+linux: build/$(BINARY)-linux-amd64 build/$(BINARY)-linux-arm64
 
 build/$(BINARY)-linux-%: FORCE
 	@mkdir -p build
 	GOARCH=$* $(GOBUILD) -o $@ $(PKG)
 
-# Release binaries for macOS (Apple silicon and Intel).
+# macOS binaries (Apple silicon and Intel).
 macos: build/$(BINARY)-darwin-arm64 build/$(BINARY)-darwin-amd64
 
 build/$(BINARY)-darwin-%: FORCE
 	@mkdir -p build
 	CGO_ENABLED=0 GOOS=darwin GOARCH=$* $(GO) build -trimpath -ldflags "$(LDFLAGS)" -o $@ $(PKG)
 
-# Per-architecture Linux build used by the packages.
-build/$(BINARY)-%: FORCE
-	@mkdir -p build
-	GOARCH=$* $(GOBUILD) -o $@ $(PKG)
-
-# --- tests (run natively; no TUN device or root needed) --------------------------
+# --- tests: run natively, no TUN device or root needed ----------------------------
 test:
 	$(GO) test ./...
 
@@ -85,36 +82,30 @@ test-using-docker: test-image
 	docker run --rm -v $(CURDIR):/microtunnel -w /microtunnel $(TEST_IMAGE) \
 		go test -race -count=1 ./...
 
-# --- Docker ------------------------------------------------------------------------
+# --- Docker image and end-to-end tests (real TUN devices; need Docker) ---------------
 image:
 	docker build -t $(DOCKER_IMAGE) .
-
-run-shell:
-	@docker run -it --entrypoint /bin/bash $(DOCKER_IMAGE)
-
-run:
-	@docker run --rm --name microtunnel-peer -it $(DOCKER_IMAGE)
 
 integration-test: image
 	./scripts/run-integration-test.sh
 
-# Dynamic peers: relay with an empty peers_dir, `peer add/remove` while it runs.
+# Relay with an empty peers_dir; `peer add/remove` while it runs.
 dynamic-test: image
 	./scripts/run-dynamic-peers-test.sh
 
-# Admin API + enrollment service: peer add through the socket, `join` with a token.
+# Admin socket and enrollment service: `peer add -socket`, `join` with a token.
 enroll-test: image
 	./scripts/run-enroll-test.sh
 
 # --- packages ----------------------------------------------------------------------
-deb: build/$(BINARY)-$(DEB_ARCH)
+deb: build/$(BINARY)-linux-$(DEB_ARCH)
 	rm -rf $(DEB_ROOT)
 	mkdir -p $(DEB_ROOT)/DEBIAN
 	mkdir -p $(DEB_ROOT)/usr/bin
 	mkdir -p $(DEB_ROOT)/usr/share/microtunnel
 	mkdir -p $(DEB_ROOT)/lib/systemd/system
 	mkdir -p $(DEB_ROOT)/etc/microtunnel
-	install -m 755 build/$(BINARY)-$(DEB_ARCH) $(DEB_ROOT)/usr/bin/$(BINARY)
+	install -m 755 build/$(BINARY)-linux-$(DEB_ARCH) $(DEB_ROOT)/usr/bin/$(BINARY)
 	install -m 755 scripts/create-tunnel.sh $(DEB_ROOT)/usr/share/microtunnel/microtunnel-create-tunnel.sh
 	install -m 755 scripts/extract-keys-hex.sh $(DEB_ROOT)/usr/bin/microtunnel-extract-keys-hex.sh
 	install -m 755 scripts/extract-pubkey-hex.sh $(DEB_ROOT)/usr/bin/microtunnel-extract-pubkey-hex.sh
@@ -134,14 +125,14 @@ deb: build/$(BINARY)-$(DEB_ARCH)
 	dpkg-deb --build --root-owner-group $(DEB_ROOT) build/$(DEB_PKG).deb
 	@echo "Package built: build/$(DEB_PKG).deb"
 
-rpm: build/$(BINARY)-$(RPM_GOARCH)
+rpm: build/$(BINARY)-linux-$(RPM_GOARCH)
 	mkdir -p build/rpm/BUILD build/rpm/RPMS build/rpm/SOURCES build/rpm/SPECS build/rpm/SRPMS
 	rpmbuild -bb --target $(RPM_ARCH) \
 		--define "_topdir $(CURDIR)/build/rpm" \
 		--define "_sourcedir $(CURDIR)" \
 		--define "pkg_version $(RPM_VERSION)" \
 		--define "pkg_release $(RPM_RELEASE)" \
-		--define "bin_path build/$(BINARY)-$(RPM_GOARCH)" \
+		--define "bin_path build/$(BINARY)-linux-$(RPM_GOARCH)" \
 		rpm/microtunnel.spec
 	@echo "Package built: $$(find build/rpm/RPMS -name '*.rpm')"
 
