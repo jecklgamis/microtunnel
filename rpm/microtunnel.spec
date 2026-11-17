@@ -24,6 +24,7 @@ mkdir -p %{buildroot}/usr/bin
 mkdir -p %{buildroot}/usr/share/microtunnel
 mkdir -p %{buildroot}/usr/lib/systemd/system
 mkdir -p %{buildroot}/etc/microtunnel
+install -d -m 750 %{buildroot}/etc/microtunnel/peers.d
 
 install -m 755 %{_sourcedir}/%{bin_path}                 %{buildroot}/usr/bin/microtunnel
 install -m 755 %{_sourcedir}/scripts/create-tunnel.sh        %{buildroot}/usr/share/microtunnel/microtunnel-create-tunnel.sh
@@ -35,6 +36,7 @@ install -m 644 %{_sourcedir}/rpm/systemd/microtunnel-relay.service    %{buildroo
 install -m 644 %{_sourcedir}/rpm/systemd/microtunnel-peer.service      %{buildroot}/usr/lib/systemd/system/
 install -m 644 %{_sourcedir}/rpm/systemd/microtunnel-peer-1.service   %{buildroot}/usr/lib/systemd/system/
 install -m 644 %{_sourcedir}/rpm/systemd/microtunnel-peer-2.service   %{buildroot}/usr/lib/systemd/system/
+install -m 644 %{_sourcedir}/rpm/systemd/microtunnel-peer@.service    %{buildroot}/usr/lib/systemd/system/
 install -m 640 %{_sourcedir}/packaging/config/relay.yaml   %{buildroot}/etc/microtunnel/relay.yaml
 install -m 640 %{_sourcedir}/packaging/config/peer.yaml    %{buildroot}/etc/microtunnel/peer.yaml
 install -m 640 %{_sourcedir}/packaging/config/peer-1.yaml  %{buildroot}/etc/microtunnel/peer-1.yaml
@@ -51,6 +53,8 @@ install -m 640 %{_sourcedir}/packaging/config/peer-2.yaml  %{buildroot}/etc/micr
 /usr/lib/systemd/system/microtunnel-peer.service
 /usr/lib/systemd/system/microtunnel-peer-1.service
 /usr/lib/systemd/system/microtunnel-peer-2.service
+/usr/lib/systemd/system/microtunnel-peer@.service
+%dir %attr(0750,root,root) /etc/microtunnel/peers.d
 %config(noreplace) /etc/microtunnel/relay.yaml
 %config(noreplace) /etc/microtunnel/peer.yaml
 %config(noreplace) /etc/microtunnel/peer-1.yaml
@@ -60,18 +64,17 @@ install -m 640 %{_sourcedir}/packaging/config/peer-2.yaml  %{buildroot}/etc/micr
 systemctl daemon-reload
 echo "Microtunnel installed."
 echo ""
-echo "The configs in /etc/microtunnel/ are TEMPLATES with <placeholders>; the services will not"
-echo "start until you fill them in. First create this machine's key pair:"
-echo "  sudo microtunnel keygen <relay|peer|peer-1|peer-2> -dir /etc/microtunnel"
+echo "Set this machine up with one command:"
+echo "  sudo microtunnel init relay --endpoint <this-host>:5040          # on the relay"
+echo "  sudo microtunnel init peer --relay <host>:5040 --relay-key <hex> --psk-file <file>   # on a peer"
+echo "then:  systemctl enable --now microtunnel-relay   (or microtunnel-peer)"
 echo ""
-echo "Then edit the matching config and enable the appropriate service:"
-echo "  systemctl enable --now microtunnel-relay    # on the relay machine"
-echo "  systemctl enable --now microtunnel-peer     # on a generic peer machine"
-echo "  systemctl enable --now microtunnel-peer-1   # on peer-1 machine"
-echo "  systemctl enable --now microtunnel-peer-2   # on peer-2 machine"
+echo "The sample configs in /etc/microtunnel/ are TEMPLATES with <placeholders>; the services"
+echo "will not start from them until you fill them in (or use the init commands above)."
 
 %preun
-for svc in microtunnel-relay microtunnel-peer microtunnel-peer-1 microtunnel-peer-2; do
+instances=$(systemctl list-units --all --plain --no-legend 'microtunnel-peer@*.service' 2>/dev/null | awk '{print $1}')
+for svc in microtunnel-relay microtunnel-peer microtunnel-peer-1 microtunnel-peer-2 $instances; do
     if systemctl is-active --quiet "$svc" 2>/dev/null; then
         systemctl stop "$svc"
     fi

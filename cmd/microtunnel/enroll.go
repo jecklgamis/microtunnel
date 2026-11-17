@@ -19,6 +19,7 @@ import (
 	"github.com/jecklgamis/microtunnel/internal/config"
 	"github.com/jecklgamis/microtunnel/internal/enroll"
 	"github.com/jecklgamis/microtunnel/internal/logx"
+	"github.com/jecklgamis/microtunnel/internal/setup"
 )
 
 const enrollUsage = `Usage:
@@ -49,7 +50,7 @@ Generates a key pair on this machine, enrolls its public key with the service at
 leaves this machine.
   -token <token>     the join token (or set MICROTUNNEL_JOIN_TOKEN, which keeps it out of shell history)
   -name <name>       peer name (not needed if the token carries one)
-  -dir <dir>         where to write the files (default .)
+  -dir <dir>         where to write the files (default /etc/microtunnel when run as root, else .)
   -ca-file <file>    trust this CA for the service's certificate (private/self-signed CA)
   -allow-http        permit a plain http:// URL (trusted networks only)
 `
@@ -263,7 +264,7 @@ func runJoin(args []string, stdout, stderr io.Writer) error {
 	url, rest := args[0], args[1:]
 	token := fs.String("token", "", "")
 	name := fs.String("name", "", "")
-	dir := fs.String("dir", ".", "")
+	dir := fs.String("dir", "", "")
 	ca := fs.String("ca-file", "", "")
 	allowHTTP := fs.Bool("allow-http", false, "")
 	if err := fs.Parse(rest); err != nil {
@@ -275,6 +276,12 @@ func runJoin(args []string, stdout, stderr io.Writer) error {
 	if *token == "" {
 		*token = os.Getenv("MICROTUNNEL_JOIN_TOKEN")
 	}
+	if *dir == "" { // as root, write where the services look; otherwise the current directory
+		*dir = "."
+		if os.Geteuid() == 0 {
+			*dir = setup.DefaultDir
+		}
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 	res, err := enroll.Join(ctx, enroll.JoinOptions{
@@ -285,6 +292,6 @@ func runJoin(args []string, stdout, stderr io.Writer) error {
 	}
 	fmt.Fprintf(stdout, "Enrolled as %q with overlay address %s\n", res.Name, res.IP)
 	fmt.Fprintf(stdout, "  private key: %s (mode 0600)\n  public key:  %s\n  config:      %s\n\n", res.KeyFile, res.CrtFile, res.ConfigFile)
-	fmt.Fprintf(stdout, "Start it with:\n\n  sudo microtunnel -c %s\n", res.ConfigFile)
+	fmt.Fprintf(stdout, "Start it with:\n\n  %s\n", startHint(peerUnit(res.Name), res.ConfigFile, *dir))
 	return nil
 }

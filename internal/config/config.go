@@ -201,6 +201,9 @@ func Parse(data []byte) (*Config, error) {
 		if *raw.PreSharedKey == "" {
 			return nil, errors.New("pre_shared_key must not be empty (omit it to disable PSK authentication)")
 		}
+		if v := *raw.PreSharedKey; len(v) > 2 && v[0] == '<' && v[len(v)-1] == '>' {
+			return nil, fmt.Errorf("pre_shared_key is still the template placeholder %s; set your own long random secret", v)
+		}
 		cfg.PreSharedKey = *raw.PreSharedKey
 		cfg.HasPSK = true
 	}

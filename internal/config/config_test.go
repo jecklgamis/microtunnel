@@ -552,8 +552,23 @@ func TestPackagedTemplatesAreSafePlaceholders(t *testing.T) {
 			t.Errorf("%s is not a valid config once filled in: %v\n%s", f, err, filled)
 			continue
 		}
-		if len(cfg.Peers) == 0 {
-			t.Errorf("%s has no peers once filled in", f)
+		if len(cfg.Peers) == 0 && cfg.PeersDir == "" {
+			t.Errorf("%s has neither peers nor a peers_dir once filled in", f)
+		}
+	}
+}
+
+func TestPlaceholderPSKIsRejected(t *testing.T) {
+	for _, psk := range []string{"<replace-with-a-long-random-secret>", "<same-secret-as-the-relay>", "<x>"} {
+		_, err := Parse([]byte(minimalYAML + "pre_shared_key: \"" + psk + "\"\n"))
+		if err == nil || !strings.Contains(err.Error(), "placeholder") {
+			t.Errorf("psk %q: err=%v, want a placeholder error", psk, err)
+		}
+	}
+	// Ordinary secrets that merely contain angle brackets are fine.
+	for _, psk := range []string{"a<b>c", "<>", "<", "secret>"} {
+		if _, err := Parse([]byte(minimalYAML + "pre_shared_key: \"" + psk + "\"\n")); err != nil {
+			t.Errorf("psk %q wrongly rejected: %v", psk, err)
 		}
 	}
 }

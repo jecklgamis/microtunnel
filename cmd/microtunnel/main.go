@@ -5,6 +5,7 @@
 //
 //	microtunnel [-c <config.yaml>]          run the tunnel
 //	microtunnel peer add|remove|list ...    manage the relay's peers_dir
+//	microtunnel init relay|peer ...         one-command first-run setup (keys + complete config)
 //	microtunnel keygen <name>               create a key pair and print the public key
 //	microtunnel enroll serve|token ...      self-service enrollment service (next to a relay)
 //	microtunnel join <url> -token <t>       enroll this machine with such a service
@@ -47,6 +48,8 @@ func run() error {
 			return runPeerCmd(os.Args[2:], os.Stdout, os.Stderr)
 		case "keygen":
 			return runKeygen(os.Args[2:], os.Stdout, os.Stderr)
+		case "init":
+			return runInit(os.Args[2:], os.Stdout, os.Stderr)
 		case "enroll":
 			return runEnroll(os.Args[2:], os.Stdout, os.Stderr)
 		case "join":
@@ -56,7 +59,7 @@ func run() error {
 	configPath := flag.String("c", "peer.yaml", "YAML config file")
 	showVersion := flag.Bool("version", false, "print version and exit")
 	flag.Usage = func() {
-		fmt.Fprintf(flag.CommandLine.Output(), "Usage: %s [-c <config.yaml>]\n       %s peer add|remove|list ...  (see `%s peer help`, `enroll help`, `join -h`)\n", os.Args[0], os.Args[0], os.Args[0])
+		fmt.Fprintf(flag.CommandLine.Output(), "Usage: %s [-c <config.yaml>]\n       %s peer add|remove|list ...  (see `%s init help`, `peer help`, `enroll help`, `join -h`)\n", os.Args[0], os.Args[0], os.Args[0])
 		flag.PrintDefaults()
 	}
 	flag.Parse()

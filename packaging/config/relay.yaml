@@ -5,24 +5,26 @@
 #      sudo microtunnel keygen relay -dir /etc/microtunnel
 # 2. Replace pre_shared_key with a long random secret (e.g. `openssl rand -hex 32`);
 #    every peer must use the same value.
-# 3. Add peers (see "Adding Peers Without a Restart" in the user guide), or list them below.
+# 3. Add peers with `microtunnel peer add` (see "Adding Peers Without a Restart" in the
+#    user guide). They are stored in peers_dir, which the package creates, and take effect
+#    without restarting the relay.
 interface: microtunnel0
 port: 5040
 private_key_file: /etc/microtunnel/relay.key
 pre_shared_key: <replace-with-a-long-random-secret>
 verbose: false
 
-# Optional: manage peers without restarts (microtunnel peer add/remove/list).
-# Create the directory first:  sudo mkdir -p /etc/microtunnel/peers.d
-#peers_dir: /etc/microtunnel/peers.d
-# Optional: local admin API for tools and the enrollment service (the unit creates /run/microtunnel).
-#admin_socket: /run/microtunnel/admin.sock
+# One file per peer, managed by `microtunnel peer add|remove|list`.
+peers_dir: /etc/microtunnel/peers.d
+
+# Local admin API (unix socket, root only): `microtunnel peer ...` uses it automatically, and it
+# reports live peer state. The relay service creates /run/microtunnel for it.
+admin_socket: /run/microtunnel/admin.sock
+# Optional: your relay's public address, put into the configs generated for new peers.
 #public_endpoint: <relay-host-or-ip>:5040
 
-peers:
-  - public_key: <peer-1-public-key-hex>   # printed by `microtunnel keygen` on that peer
-    allowed_ips:
-      - 10.9.0.2/32
-  - public_key: <peer-2-public-key-hex>
-    allowed_ips:
-      - 10.9.0.3/32
+# Peers can also be listed here instead of (or as well as) in peers_dir:
+#peers:
+#  - public_key: <peer-1-public-key-hex>   # printed by `microtunnel keygen` on that peer
+#    allowed_ips:
+#      - 10.9.0.2/32

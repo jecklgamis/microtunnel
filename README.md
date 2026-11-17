@@ -162,6 +162,28 @@ Notes:
 
 ---
 
+## Quick Setup (`microtunnel init`)
+
+One command per machine writes a complete, validated config (and the machine's key, which is reused if it exists and never overwritten):
+
+```bash
+# relay
+sudo microtunnel init relay --endpoint relay.example.com:5040      # key, random PSK, tunnel_address, peers_dir, admin socket
+sudo systemctl enable --now microtunnel-relay
+
+# each peer (init relay prints this line, with the PSK in an env var so it stays out of `ps`)
+MICROTUNNEL_PSK=<psk> sudo -E microtunnel init peer --relay relay.example.com:5040 --relay-key <relay public key>
+sudo microtunnel peer add laptop -public-key <printed by init peer>      # on the relay; prints the assigned address
+MICROTUNNEL_PSK=<psk> sudo -E microtunnel init peer ... --address 10.9.0.2/24 --force   # key kept; applies the address
+sudo systemctl enable --now microtunnel-peer
+```
+
+Rules: an existing config is never overwritten without `-force` (which, for a relay, generates a *new* pre-shared key and says so); an existing private key is reused, never replaced; the written config is loaded back through the same validator the daemon uses; secrets are mode 0600. `-start` runs the `systemctl enable --now` step. A peer named something other than `peer` runs as `microtunnel-peer@<name>`.
+
+For many machines use [self-service enrollment](#enrollment-service-self-service-join) instead: `microtunnel join` does the peer's whole side in one command. Verify `init` with real TUN devices: `make init-test`.
+
+---
+
 ## Dynamic Peers (no restarts)
 
 A relay normally lists every peer in its YAML, and editing that means a restart that drops every session. Instead, point the relay at a directory with **`peers_dir`** and manage peers with the built-in CLI. A running relay notices changes within a second or two, and **sessions of unaffected peers are never interrupted**.
@@ -358,6 +380,7 @@ make test-using-docker  # run the race-detector suite on Linux in a golang conta
 make integration-test   # full test with real TUN devices: relay + 2 peers in Docker, ping + curl
 make dynamic-test       # real-TUN test of `peers_dir` + `microtunnel peer add/remove` against a running relay
 make enroll-test        # real-TUN test of the admin socket + enrollment service (`peer add -socket`, `enroll`, `join`)
+make init-test          # real-TUN test of `init relay` / `init peer` (relay + two peers set up with one command each)
 make build              # build ./microtunnel for the machine you're on (current OS and architecture)
 make linux              # static Linux binaries (amd64 + arm64) into build/
 make macos              # macOS binaries (arm64 + amd64) into build/
@@ -369,10 +392,11 @@ Layout:
 
 | Path | Contents |
 |------|----------|
-| `cmd/microtunnel` | `main`: flags, config loading, signal handling, wiring; `peer add/remove/list`, `keygen`, `enroll` and `join` subcommands |
+| `cmd/microtunnel` | `main`: flags, config loading, signal handling, wiring; `init`, `peer add/remove/list`, `keygen`, `enroll` and `join` subcommands |
 | `internal/proto` | wire protocol: AES-256-GCM data packets, X25519 handshake with identity hiding, session-key derivation, 2048-bit replay window |
 | `internal/config` | YAML config parsing/validation, CIDR parsing, `peers_dir` loading |
 | `internal/admin` | the logic behind `microtunnel peer add/remove/list`: IP allocation, peer files, spoke-config generation |
+| `internal/setup` | `microtunnel init relay/peer`: generate keys and write complete, validated configs |
 | `internal/adminapi` | the relay's unix-socket JSON API and its client |
 | `internal/enroll` | enrollment service: single-use token store, HTTPS server, `join` client |
 | `internal/peer` | session table, AllowedIPs routing, worker goroutines, handshake state machine, housekeeping (rekey/expiry/keepalive), live peer reload (`reload.go`, `watch.go`) |

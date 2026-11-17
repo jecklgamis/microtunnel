@@ -30,7 +30,7 @@ GOBUILD  = CGO_ENABLED=0 GOOS=linux $(GO) build -trimpath -ldflags "$(LDFLAGS)"
 
 .PHONY: all build linux macos \
         test test-race vet fmt fmt-check check test-image test-using-docker \
-        image integration-test dynamic-test enroll-test \
+        image integration-test dynamic-test enroll-test init-test \
         deb rpm clean FORCE
 
 all: build
@@ -97,6 +97,10 @@ dynamic-test: image
 enroll-test: image
 	./scripts/run-enroll-test.sh
 
+# `init relay` / `init peer`: one-command setup of a relay and two peers.
+init-test: image
+	./scripts/run-init-test.sh
+
 # --- packages ----------------------------------------------------------------------
 deb: build/$(BINARY)-linux-$(DEB_ARCH)
 	rm -rf $(DEB_ROOT)
@@ -105,6 +109,7 @@ deb: build/$(BINARY)-linux-$(DEB_ARCH)
 	mkdir -p $(DEB_ROOT)/usr/share/microtunnel
 	mkdir -p $(DEB_ROOT)/lib/systemd/system
 	mkdir -p $(DEB_ROOT)/etc/microtunnel
+	install -d -m 750 $(DEB_ROOT)/etc/microtunnel/peers.d
 	install -m 755 build/$(BINARY)-linux-$(DEB_ARCH) $(DEB_ROOT)/usr/bin/$(BINARY)
 	install -m 755 scripts/create-tunnel.sh $(DEB_ROOT)/usr/share/microtunnel/microtunnel-create-tunnel.sh
 	install -m 755 scripts/extract-keys-hex.sh $(DEB_ROOT)/usr/bin/microtunnel-extract-keys-hex.sh
@@ -115,6 +120,7 @@ deb: build/$(BINARY)-linux-$(DEB_ARCH)
 	install -m 644 debian/systemd/microtunnel-peer.service $(DEB_ROOT)/lib/systemd/system/
 	install -m 644 debian/systemd/microtunnel-peer-1.service $(DEB_ROOT)/lib/systemd/system/
 	install -m 644 debian/systemd/microtunnel-peer-2.service $(DEB_ROOT)/lib/systemd/system/
+	install -m 644 debian/systemd/microtunnel-peer@.service $(DEB_ROOT)/lib/systemd/system/
 	install -m 640 packaging/config/relay.yaml $(DEB_ROOT)/etc/microtunnel/relay.yaml
 	install -m 640 packaging/config/peer.yaml $(DEB_ROOT)/etc/microtunnel/peer.yaml
 	install -m 640 packaging/config/peer-1.yaml $(DEB_ROOT)/etc/microtunnel/peer-1.yaml

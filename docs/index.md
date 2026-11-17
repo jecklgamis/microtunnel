@@ -69,6 +69,45 @@ Both packages install:
 
 ---
 
+## Quick Start
+
+After installing the package, a relay and a peer each need one command. `microtunnel init` generates the machine's key (an existing key is reused, never replaced), a strong random pre-shared key where needed, and writes a complete, validated config. It never overwrites an existing config unless you pass `-force`.
+
+**On the relay:**
+
+```bash
+sudo microtunnel init relay --endpoint relay.example.com:5040
+sudo systemctl enable --now microtunnel-relay
+```
+
+`init relay` prints the relay's public key and a ready-to-use line for the peers. (`--start` runs the `systemctl` step for you.) Open UDP 5040 in your [firewall](#firewall).
+
+**On each peer**, using the line the relay printed. It contains the pre-shared key, so pass it over a secure channel; it is given through an environment variable so it never appears in the process list:
+
+```bash
+MICROTUNNEL_PSK=<printed by init relay> sudo -E microtunnel init peer \
+  --relay relay.example.com:5040 --relay-key <relay public key>
+#   public key:  d3eb...
+```
+
+Then register that public key on the relay and apply the address it assigns:
+
+```bash
+# on the relay
+sudo microtunnel peer add laptop -public-key d3eb...        # prints: laptop: 10.9.0.2/32
+
+# on the peer: apply the address (your key is kept), then start it
+MICROTUNNEL_PSK=<same> sudo -E microtunnel init peer --relay relay.example.com:5040 --relay-key <key> \
+  --address 10.9.0.2/24 --force
+sudo systemctl enable --now microtunnel-peer
+```
+
+For several machines, [self-service enrollment](#self-service-enrollment) is shorter: one `microtunnel join https://... -token ...` on each new machine does all of this. Peers named other than `peer` (`init peer --name laptop`, or `join`) run as `systemctl enable --now microtunnel-peer@laptop`.
+
+`init relay` options: `--address` (overlay address, default `10.9.0.1/24`), `--port`, `--admin-socket` (`none` turns the API off), `--dir`. `init peer` options: `--name`, `--psk-file` (instead of the environment variable), `--subnet`, `--dir`. See `microtunnel init help`.
+
+---
+
 ## Key Generation
 
 Each node (relay and every peer) needs its own X25519 key pair. Generate it **locally on that machine** — pass only that node's own name, so the private key never has to leave the machine it belongs to:
@@ -107,7 +146,7 @@ To add peers to a running relay without editing its YAML, see [Adding Peers With
 
 ## Configuration
 
-> **The packaged config files are templates.** `/etc/microtunnel/relay.yaml`, `peer.yaml`, `peer-1.yaml` and `peer-2.yaml` contain `<placeholders>` and **no keys or secrets**, so a service started from an untouched template refuses to run. Create keys with `microtunnel keygen`, set your own long random `pre_shared_key`, and fill in the public keys and endpoint as shown below.
+> **The packaged config files are templates.** `/etc/microtunnel/relay.yaml`, `peer.yaml`, `peer-1.yaml` and `peer-2.yaml` contain `<placeholders>` and **no keys or secrets**, so a service started from an untouched template refuses to run. The [Quick Start](#quick-start) (`microtunnel init`) writes real ones; to do it by hand, create keys with `microtunnel keygen`, set your own long random `pre_shared_key`, and fill in the public keys and endpoint as shown below.
 >
 > The repository's demo keys and the pre-shared keys `some-psk` / `change-me` are public. `microtunnel` logs a warning at startup if it finds any of them in use; never rely on them for a real network.
 
@@ -212,20 +251,18 @@ A config needs at least one peer, either under `peers:` or as a file in `peers_d
 
 Editing `peers:` in the relay's YAML and restarting drops every session. Instead, keep peers in a directory and manage them with the `microtunnel` command. The running relay notices changes within a second or two, and **other peers' sessions are never interrupted**.
 
-### One-time relay setup
+### Relay setup
+
+The package already creates `/etc/microtunnel/peers.d`, and the packaged `relay.yaml` has `peers_dir: /etc/microtunnel/peers.d` enabled, so there is nothing to set up: start the relay and add peers.
+
+If your relay config predates this (or is written by hand), create the directory and add one line, then restart the relay once. Any peers already listed under `peers:` keep working:
 
 ```bash
 sudo mkdir -p /etc/microtunnel/peers.d
 ```
 
-Add one line to `/etc/microtunnel/relay.yaml` (you can keep any peers already listed under `peers:`) and restart the relay once:
-
 ```yaml
 peers_dir: /etc/microtunnel/peers.d
-```
-
-```bash
-sudo systemctl restart microtunnel-relay
 ```
 
 ### Add a peer
@@ -328,7 +365,7 @@ To force a reload, send `SIGHUP`: `sudo systemctl kill -s HUP microtunnel-relay`
 
 With **`admin_socket`** set, the relay serves a small API on a unix socket that only root (or the socket's owner) can open. Compared with editing `peers_dir`, the relay itself picks the IP (so two admins cannot collide), applies changes **immediately** instead of within a second or two, and can report **live state**.
 
-Add to `/etc/microtunnel/relay.yaml` and restart the relay once (the packaged `microtunnel-relay` service creates `/run/microtunnel` for it):
+The packaged `relay.yaml` **already enables it** (`admin_socket: /run/microtunnel/admin.sock`), and the `microtunnel-relay` service creates `/run/microtunnel` for it, so there is nothing to do on a fresh install. For a hand-written config, add this and restart the relay once:
 
 ```yaml
 admin_socket: /run/microtunnel/admin.sock
@@ -410,15 +447,15 @@ sudo microtunnel enroll token create -tokens /var/lib/microtunnel/tokens -name l
 #   On the new machine:  microtunnel join https://enroll.example.com -token mt1.3f9a....
 
 # On the new machine:
-sudo microtunnel join https://enroll.example.com -token mt1.3f9a.... -dir /etc/microtunnel
+sudo microtunnel join https://enroll.example.com -token mt1.3f9a....
 #   Enrolled as "laptop" with overlay address 10.9.0.2
-sudo microtunnel -c /etc/microtunnel/laptop.yaml
+sudo systemctl enable --now microtunnel-peer@laptop
 ```
 
 - `-name laptop` on `token create` fixes the machine's name; omit it and the machine passes `-name` to `join` itself.
 - If the service uses a private CA, give `join` `-ca-file ca.pem`. Plain `http://` URLs are refused unless you pass `-allow-http`.
 - `MICROTUNNEL_JOIN_TOKEN` can carry the token instead of `-token`, keeping it out of shell history.
-- `join` writes `<name>.key` (0600), `<name>.crt` and `<name>.yaml` (0600, it contains the pre-shared key) and refuses to overwrite existing files. On macOS the config uses `interface: utun`.
+- `join` writes `<name>.key` (0600), `<name>.crt` and `<name>.yaml` (0600, it contains the pre-shared key) into `/etc/microtunnel` when run as root (otherwise the current directory; override with `-dir`) and refuses to overwrite existing files. The packaged `microtunnel-peer@.service` runs `/etc/microtunnel/<name>.yaml`. On macOS the config uses `interface: utun`.
 
 ### Manage tokens
 

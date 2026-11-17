@@ -196,7 +196,12 @@ func SpokeConfig(reg *Registration, o SpokeOptions) string {
 	if reg.PreSharedKey != "" {
 		fmt.Fprintf(&b, "pre_shared_key: %s\n", yamlScalar(reg.PreSharedKey))
 	}
-	fmt.Fprintf(&b, "tunnel_address: %s/%d\n", reg.IP, reg.Subnet.Bits())
+	if reg.IP.IsValid() {
+		fmt.Fprintf(&b, "tunnel_address: %s/%d\n", reg.IP, reg.Subnet.Bits())
+	} else {
+		// No address assigned yet: leave a marked line to uncomment once the relay's admin has one.
+		fmt.Fprintf(&b, "#tunnel_address: <assigned-overlay-ip>/%d   # set to the address the relay's admin assigns, then uncomment\n", reg.Subnet.Bits())
+	}
 	// Retry quickly: right after enrolment the relay may not have loaded this
 	// peer yet, and the default 30s would make the first connection slow.
 	b.WriteString("reconnect_interval: 5\n")
