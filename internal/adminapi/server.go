@@ -18,6 +18,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"path/filepath"
 	"sync"
 	"time"
 
@@ -97,6 +98,11 @@ func (s *Server) Handler() http.Handler {
 // left by a crashed process is replaced; a socket another process is still
 // serving is an error.
 func Listen(path string) (net.Listener, error) {
+	// systemd creates /run/microtunnel for the Linux unit; launchd has no such
+	// thing, so create the parent directory when it is missing (root-owned, 0755).
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return nil, err
+	}
 	if fi, err := os.Lstat(path); err == nil {
 		if fi.Mode()&os.ModeSocket == 0 {
 			return nil, fmt.Errorf("admin_socket %s exists and is not a socket", path)

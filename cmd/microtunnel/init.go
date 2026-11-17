@@ -7,7 +7,6 @@ import (
 	"io"
 	"net/netip"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 
@@ -28,9 +27,9 @@ init relay:
   -endpoint <host:port> the relay's public address; handed to peers and shown in the peer hint
   -address <ip/len>     the relay's overlay address (default 10.9.0.1/24)
   -port <n>             UDP port (default 5040)
-  -admin-socket <path>  admin API socket (default /run/microtunnel/admin.sock; "none" turns it off)
+  -admin-socket <path>  admin API socket (default /run/microtunnel/admin.sock, /var/run/... on macOS; "none" turns it off)
   -force                replace an existing config (a NEW pre-shared key is generated)
-  -start                also run: systemctl enable --now microtunnel
+  -start                also start it: systemctl enable --now microtunnel (macOS: install and load the launchd job)
 
 init peer:
   -dir <dir>            config directory (default /etc/microtunnel)
@@ -43,7 +42,7 @@ init peer:
   -address <ip/len>     this peer's overlay address, once the relay's admin has assigned one
   -subnet <cidr>        overlay subnet when no -address is given (default 10.9.0.0/24)
   -force                replace an existing <name>.yaml (the key is kept)
-  -start                also run: systemctl enable --now <the service>
+  -start                also start it: systemctl enable --now <the service> (macOS: install and load the launchd job)
 `
 
 // runInit implements `microtunnel init ...`; args exclude "init".
@@ -90,7 +89,7 @@ func initRelayCmd(args []string, stdout, stderr io.Writer) error {
 	if fs.NArg() > 0 {
 		return fmt.Errorf("unexpected argument %q", fs.Arg(0))
 	}
-	if start && !isDefaultDir(o.Dir) {
+	if start && !canStartService(o.Dir) {
 		return errors.New("-start works only with the default config directory (the service reads /etc/microtunnel/<name>.yaml)")
 	}
 
@@ -112,14 +111,13 @@ func initRelayCmd(args []string, stdout, stderr io.Writer) error {
 		fmt.Fprintf(stdout, "\nNOTE: -force generated a NEW pre-shared key. Existing peers must be updated with it.\n")
 	}
 
-	unit := setup.Unit(o.Name)
 	if start {
-		if err := systemctlEnableNow(unit, stderr); err != nil {
+		if err := startService(o.Name, res.ConfigFile, stderr); err != nil {
 			return err
 		}
-		fmt.Fprintf(stdout, "\nStarted %s.\n", unit)
+		fmt.Fprintf(stdout, "\nStarted %s.\n", serviceName(o.Name))
 	} else {
-		fmt.Fprintf(stdout, "\nStart it:\n  %s\n", startHint(unit, res.ConfigFile, o.Dir))
+		fmt.Fprintf(stdout, "\nStart it:\n  %s\n", startHint(o.Name, res.ConfigFile, o.Dir))
 	}
 
 	endpoint := res.Endpoint
@@ -160,7 +158,7 @@ func initPeerCmd(args []string, stdout, stderr io.Writer) error {
 		return err
 	}
 	o.PSK = psk
-	if start && !isDefaultDir(o.Dir) {
+	if start && !canStartService(o.Dir) {
 		return errors.New("-start works only with the default config directory (the service reads /etc/microtunnel/<name>.yaml)")
 	}
 
@@ -186,14 +184,13 @@ func initPeerCmd(args []string, stdout, stderr io.Writer) error {
 		fmt.Fprintf(stdout, "  %s\n", rerunHint(o, res.Name))
 	}
 
-	unit := setup.Unit(res.Name)
 	if start {
-		if err := systemctlEnableNow(unit, stderr); err != nil {
+		if err := startService(res.Name, res.ConfigFile, stderr); err != nil {
 			return err
 		}
-		fmt.Fprintf(stdout, "\nStarted %s.\n", unit)
+		fmt.Fprintf(stdout, "\nStarted %s.\n", serviceName(res.Name))
 	} else {
-		fmt.Fprintf(stdout, "\nStart it:\n  %s\n", startHint(unit, res.ConfigFile, o.Dir))
+		fmt.Fprintf(stdout, "\nStart it:\n  %s\n", startHint(res.Name, res.ConfigFile, o.Dir))
 	}
 	return nil
 }
@@ -227,13 +224,6 @@ func cFlag(configFile, dir string) string {
 	return " -c " + configFile
 }
 
-func startHint(unit, configFile, dir string) string {
-	if isDefaultDir(dir) {
-		return "sudo systemctl enable --now " + unit
-	}
-	return "sudo microtunnel -c " + configFile
-}
-
 // rerunHint builds the command that sets the assigned address, without ever
 // echoing the pre-shared key.
 func rerunHint(o setup.PeerOptions, name string) string {
@@ -258,17 +248,4 @@ func subnetBits(o setup.PeerOptions) int {
 		return p.Bits()
 	}
 	return 24
-}
-
-func systemctlEnableNow(unit string, stderr io.Writer) error {
-	path, err := exec.LookPath("systemctl")
-	if err != nil {
-		return fmt.Errorf("-start needs systemd, but systemctl was not found; start it yourself with `microtunnel -c <config>`")
-	}
-	cmd := exec.Command(path, "enable", "--now", unit)
-	cmd.Stdout, cmd.Stderr = stderr, stderr
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("systemctl enable --now %s: %w (config and keys were written; fix the cause and run it yourself)", unit, err)
-	}
-	return nil
 }

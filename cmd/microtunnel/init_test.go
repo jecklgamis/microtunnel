@@ -163,14 +163,20 @@ func TestUnitNamesAndHints(t *testing.T) {
 	if setup.Unit("microtunnel") != "microtunnel" || setup.Unit("") != "microtunnel" || setup.Unit("laptop") != "microtunnel@laptop" {
 		t.Fatal("unit names")
 	}
-	if startHint("microtunnel", "/etc/microtunnel/microtunnel.yaml", "/etc/microtunnel") != "sudo systemctl enable --now microtunnel" {
+	if startHintOS("linux", "microtunnel", "/etc/microtunnel/microtunnel.yaml", "/etc/microtunnel", false) != "sudo systemctl enable --now microtunnel" {
 		t.Fatal("default dir should print the systemctl command")
 	}
 	if cFlag(setup.DefaultConfigPath, "/etc/microtunnel") != "" || cFlag("/tmp/x/microtunnel.yaml", "/tmp/x") != " -c /tmp/x/microtunnel.yaml" {
 		t.Fatal("cFlag")
 	}
-	if got := startHint("u", "/tmp/x/relay.yaml", "/tmp/x"); got != "sudo microtunnel -c /tmp/x/relay.yaml" {
+	if got := startHintOS("linux", "u", "/tmp/x/relay.yaml", "/tmp/x", false); got != "sudo microtunnel -c /tmp/x/relay.yaml" {
 		t.Fatalf("custom dir hint = %q", got)
+	}
+	if got := startHintOS("darwin", "microtunnel", "/etc/microtunnel/microtunnel.yaml", "/etc/microtunnel", true); got != "sudo launchctl bootstrap system /Library/LaunchDaemons/io.github.jecklgamis.microtunnel.plist" {
+		t.Fatalf("darwin hint with plist = %q", got)
+	}
+	if got := startHintOS("darwin", "home", "/etc/microtunnel/home.yaml", "/etc/microtunnel", false); !strings.Contains(got, "sudo microtunnel -c /etc/microtunnel/home.yaml") || !strings.Contains(got, "-start") {
+		t.Fatalf("darwin hint without plist = %q", got)
 	}
 }
 
@@ -186,7 +192,7 @@ func TestInitRelayHonoursNameForTheFilesAndTheUnit(t *testing.T) {
 		}
 	}
 	cfg, err := config.Load(filepath.Join(dir, "home.yaml"))
-	if err != nil || cfg.AdminSocket != "/run/microtunnel-home/admin.sock" {
+	if err != nil || cfg.AdminSocket != setup.AdminSocketFor("home") {
 		t.Fatalf("named instance must use its own runtime dir: %v %+v", err, cfg)
 	}
 	if !strings.Contains(out, "peer add <name> -public-key <hex> -c "+filepath.Join(dir, "home.yaml")) {

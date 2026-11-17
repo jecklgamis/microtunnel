@@ -162,6 +162,8 @@ make enroll-test        # admin socket + enrollment: `peer add -socket` (carol),
 make image              # build Docker image (microtunnel-peer:latest)
 make deb                # build .deb (DEB_ARCH=amd64|arm64; output: build/microtunnel_<ver>_<arch>.deb)
 make rpm                # build .rpm (RPM_ARCH=x86_64|aarch64; output: build/rpm/RPMS/)
+make pkg                # macOS only: universal installer build/microtunnel-<ver>-universal.pkg (unsigned; launchd plist from internal/setup/launchd.go, regenerate packaging/macos/*.plist if it changes)
+make install            # build for this machine and install to $(PREFIX)/bin (default /usr/local)
 make clean              # remove binary and build artifacts
 ```
 The binary is built with `CGO_ENABLED=0`, so packages need no libc/OpenSSL/libyaml and cross-compile from any host.
@@ -209,10 +211,6 @@ make image
 - `scripts/run-dynamic-peers-test.sh` — end-to-end test behind `make dynamic-test` (work dir `build/dyn-test`, removed on exit)
 - `scripts/run-perf-test.sh [base_url]` — runs a Gatling load test container against an Envoy HTTP proxy endpoint (defaults to peer-1's `:15052` on the detected host IP)
 - `scripts/create-tag.sh` — creates a git tag; auto-increments the rc number from the latest tag if `VERSION` env var is not set
-
-## Development Utilities
-
-- `sync-on-changes.sh` — watches the project directory on macOS using `fswatch` and rsyncs to a remote Linux machine on every change; edit the `REMOTE` variable to point to your Linux host
 
 ## CLI Options
 

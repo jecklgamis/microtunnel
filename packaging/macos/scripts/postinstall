@@ -1,0 +1,16 @@
+#!/bin/sh
+# Runs as root after the files are installed. Installs no config and no keys and
+# does not start anything: `sudo microtunnel init ...` does that.
+set -e
+
+install -d -m 0755 -o root -g wheel /etc/microtunnel
+install -d -m 0750 -o root -g wheel /etc/microtunnel/peers.d
+
+# Upgrade: if the service is already loaded, reload it so it runs the new binary.
+LABEL=io.github.jecklgamis.microtunnel
+PLIST=/Library/LaunchDaemons/$LABEL.plist
+if launchctl print "system/$LABEL" >/dev/null 2>&1; then
+    launchctl bootout "system/$LABEL" >/dev/null 2>&1 || true
+    launchctl bootstrap system "$PLIST" || true
+fi
+exit 0

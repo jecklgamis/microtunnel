@@ -307,8 +307,11 @@ func TestNamingHelpers(t *testing.T) {
 	if Unit("") != "microtunnel" || Unit("microtunnel") != "microtunnel" || Unit("home") != "microtunnel@home" {
 		t.Fatal("Unit")
 	}
-	if AdminSocketFor("") != "/run/microtunnel/admin.sock" || AdminSocketFor("home") != "/run/microtunnel-home/admin.sock" {
-		t.Fatal("AdminSocketFor")
+	if adminSocketFor("linux", "") != "/run/microtunnel/admin.sock" || adminSocketFor("linux", "home") != "/run/microtunnel-home/admin.sock" {
+		t.Fatal("adminSocketFor linux")
+	}
+	if adminSocketFor("darwin", "") != "/var/run/microtunnel/admin.sock" || adminSocketFor("darwin", "home") != "/var/run/microtunnel-home/admin.sock" {
+		t.Fatal("adminSocketFor darwin")
 	}
 	if DefaultConfigPath != "/etc/microtunnel/microtunnel.yaml" {
 		t.Fatalf("DefaultConfigPath=%s", DefaultConfigPath)
@@ -332,7 +335,7 @@ func TestNamedInstancesDoNotShareFilesOrPeers(t *testing.T) {
 		t.Fatalf("peers dirs: %s %s", a.PeersDir, b.PeersDir)
 	}
 	cfgB, err := config.Load(b.ConfigFile)
-	if err != nil || cfgB.AdminSocket != "/run/microtunnel-home/admin.sock" || cfgB.PeersDir != b.PeersDir {
+	if err != nil || cfgB.AdminSocket != AdminSocketFor("home") || cfgB.PeersDir != b.PeersDir {
 		t.Fatalf("named config: %v %+v", err, cfgB)
 	}
 	if _, err := InitRelay(RelayOptions{Dir: dir, Name: "../evil"}); err == nil {

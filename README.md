@@ -123,14 +123,15 @@ Running a relay and several peers as native processes on **one** host does not w
 
 A Mac is an ordinary peer; the relay side is the same as above. macOS has no `systemctl` and creates the tunnel as a `utun` device, which needs root, so you run microtunnel in the foreground with `sudo`.
 
-**1. Install.** Either build from source (Go 1.26+, `brew install go`):
+**1. Install.** Easiest is the installer package: download `microtunnel-<version>-universal.pkg` (Apple silicon and Intel) from the [releases page](https://github.com/jecklgamis/microtunnel/releases) and open it. It isn't signed yet, so macOS will block a double-click: right-click the file and choose Open (or run `sudo installer -pkg microtunnel-<version>-universal.pkg -target /`). It installs `/usr/local/bin/microtunnel`, a launchd job, `/etc/microtunnel/peers.d` and `/usr/local/share/microtunnel/uninstall.sh`, and starts nothing. Or build from source (Go 1.26+, `brew install go`):
 
 ```bash
 git clone git@github.com:jecklgamis/microtunnel.git && cd microtunnel
 make install                 # builds for this Mac and installs /usr/local/bin/microtunnel
+make pkg                     # or build the installer yourself: build/microtunnel-<version>-universal.pkg
 ```
 
-or download `microtunnel-darwin-arm64` (Apple silicon) or `microtunnel-darwin-amd64` (Intel) from the [releases page](https://github.com/jecklgamis/microtunnel/releases), then `xattr -d com.apple.quarantine <file>`, `chmod +x <file>` and move it to `/usr/local/bin/microtunnel`.
+A bare binary also works: download `microtunnel-darwin-arm64` or `microtunnel-darwin-amd64`, then `xattr -d com.apple.quarantine <file>`, `chmod +x <file>` and move it to `/usr/local/bin/microtunnel`.
 
 **2. Set up the relay** as in step 2 of the Linux walkthrough (any Linux relay works).
 
@@ -149,8 +150,18 @@ sudo env MICROTUNNEL_PSK=<psk> microtunnel init peer \
 ```bash
 sudo env MICROTUNNEL_PSK=<psk> microtunnel init peer \
   --relay relay.example.com:5040 --relay-key <relay public key> --address 10.9.0.2/24 --force
-sudo microtunnel             # reads /etc/microtunnel/microtunnel.yaml; leave it running
+sudo microtunnel             # foreground: reads /etc/microtunnel/microtunnel.yaml; Ctrl-C stops it
 ```
+
+To run it in the background and at every boot instead, load the launchd job (add `--start` to the `init peer` command in this step and it does this for you):
+
+```bash
+sudo launchctl bootstrap system /Library/LaunchDaemons/io.github.jecklgamis.microtunnel.plist
+sudo tail -f /var/log/microtunnel.log                  # logs
+sudo launchctl bootout system/io.github.jecklgamis.microtunnel   # stop it
+```
+
+The job starts only while `/etc/microtunnel/microtunnel.yaml` exists and restarts the daemon if it exits. To uninstall: `sudo /usr/local/share/microtunnel/uninstall.sh` (add `--purge` to delete `/etc/microtunnel`, config and keys included).
 
 **6. Test** from another terminal:
 
@@ -161,6 +172,7 @@ netstat -rn | grep 10.9.0           # route for the overlay subnet
 ```
 
 Notes:
+- The admin socket defaults to `/var/run/microtunnel/admin.sock` here (there is no `/run` on macOS), so `microtunnel peer ...` works the same way.
 - The interface is named `utunN` and chosen by the kernel, so `interface:` in the config is ignored on macOS. The MTU is set to 1428.
 - To also send another network through the tunnel, add it to `tunnel_routes` in the Mac's config and restart.
 - macOS may ask once whether to allow incoming connections for the binary; allow it.

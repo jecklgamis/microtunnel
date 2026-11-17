@@ -8,3 +8,4 @@ build/
 /report.html
 /report.json
 /results.jsonl
+.DS_Store

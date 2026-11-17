@@ -48,14 +48,21 @@ func Unit(name string) string {
 	return "microtunnel@" + name
 }
 
-// AdminSocketFor is the admin socket path the packaged units create a runtime
-// directory for: /run/microtunnel for the default instance, /run/microtunnel-<name>
-// for a named one.
-func AdminSocketFor(name string) string {
-	if name == "" || name == DefaultName {
-		return "/run/microtunnel/admin.sock"
+// AdminSocketFor is the default admin socket path for the instance called name.
+// On Linux the packaged units create /run/microtunnel (default instance) or
+// /run/microtunnel-<name> as a runtime directory; macOS has no /run, so it uses
+// /var/run, and the daemon creates the directory itself.
+func AdminSocketFor(name string) string { return adminSocketFor(runtime.GOOS, name) }
+
+func adminSocketFor(goos, name string) string {
+	base := "/run"
+	if goos == "darwin" {
+		base = "/var/run"
 	}
-	return "/run/microtunnel-" + name + "/admin.sock"
+	if name == "" || name == DefaultName {
+		return base + "/microtunnel/admin.sock"
+	}
+	return base + "/microtunnel-" + name + "/admin.sock"
 }
 
 // peersDirFor is the peers directory beside the config: peers.d for the default

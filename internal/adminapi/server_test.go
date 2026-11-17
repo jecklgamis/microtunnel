@@ -361,3 +361,20 @@ func TestServeStopsAndRemovesSocket(t *testing.T) {
 		t.Fatal("socket file left behind after shutdown")
 	}
 }
+
+func TestListenCreatesMissingParentDirectory(t *testing.T) {
+	dir, err := os.MkdirTemp("/tmp", "mtl")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(dir)
+	sock := filepath.Join(dir, "sub", "admin.sock")
+	ln, err := Listen(sock)
+	if err != nil {
+		t.Fatalf("Listen must create the missing runtime directory: %v", err)
+	}
+	defer ln.Close()
+	if fi, err := os.Stat(sock); err != nil || fi.Mode().Perm() != 0o600 {
+		t.Fatalf("socket: %v %v", err, fi)
+	}
+}

@@ -23,6 +23,7 @@ RPM_GOARCH   := $(if $(filter aarch64,$(RPM_ARCH)),arm64,amd64)
 BIN_VERSION ?= $(VERSION)
 deb: BIN_VERSION = $(DEB_VERSION)
 rpm: BIN_VERSION = $(RPM_VERSION)
+pkg: BIN_VERSION = $(VERSION)
 
 # Static, stripped, reproducible Linux binary: no libc/OpenSSL/libyaml needed on the target.
 LDFLAGS = -s -w -X main.version=$(BIN_VERSION)
@@ -31,7 +32,7 @@ GOBUILD  = CGO_ENABLED=0 GOOS=linux $(GO) build -trimpath -ldflags "$(LDFLAGS)"
 .PHONY: all build install uninstall linux macos \
         test test-race vet fmt fmt-check check test-image test-using-docker \
         image integration-test dynamic-test enroll-test init-test \
-        deb rpm clean FORCE
+        deb rpm pkg clean FORCE
 
 all: build
 
@@ -152,6 +153,29 @@ rpm: build/$(BINARY)-linux-$(RPM_GOARCH)
 		--define "bin_path build/$(BINARY)-linux-$(RPM_GOARCH)" \
 		rpm/microtunnel.spec
 	@echo "Package built: $$(find build/rpm/RPMS -name '*.rpm')"
+
+# macOS installer: a universal (arm64 + amd64) .pkg. Needs macOS (lipo, pkgbuild,
+# productbuild). It is not signed or notarized; see docs/index.md.
+PKG_ID  := io.github.jecklgamis.microtunnel
+PKG_ROOT := build/pkgroot
+PKG_FILE := build/microtunnel-$(VERSION)-universal.pkg
+
+pkg: macos
+	rm -rf $(PKG_ROOT)
+	mkdir -p $(PKG_ROOT)/usr/local/bin $(PKG_ROOT)/usr/local/share/microtunnel/examples \
+		$(PKG_ROOT)/Library/LaunchDaemons $(PKG_ROOT)/etc/newsyslog.d
+	lipo -create -output $(PKG_ROOT)/usr/local/bin/$(BINARY) build/$(BINARY)-darwin-arm64 build/$(BINARY)-darwin-amd64
+	chmod 755 $(PKG_ROOT)/usr/local/bin/$(BINARY)
+	install -m 755 packaging/macos/uninstall.sh $(PKG_ROOT)/usr/local/share/microtunnel/uninstall.sh
+	install -m 644 packaging/config/relay.yaml $(PKG_ROOT)/usr/local/share/microtunnel/examples/relay.yaml
+	install -m 644 packaging/config/peer.yaml $(PKG_ROOT)/usr/local/share/microtunnel/examples/peer.yaml
+	install -m 644 packaging/macos/$(PKG_ID).plist $(PKG_ROOT)/Library/LaunchDaemons/$(PKG_ID).plist
+	install -m 644 packaging/macos/newsyslog.conf $(PKG_ROOT)/etc/newsyslog.d/microtunnel.conf
+	pkgbuild --root $(PKG_ROOT) --identifier $(PKG_ID) --version $(VERSION) \
+		--ownership recommended --install-location / --scripts packaging/macos/scripts \
+		build/microtunnel-component.pkg
+	productbuild --package build/microtunnel-component.pkg $(PKG_FILE)
+	@echo "Package built: $(PKG_FILE)"
 
 clean:
 	rm -f ./$(BINARY)
