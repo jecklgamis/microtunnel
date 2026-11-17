@@ -1,0 +1,97 @@
+name: release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  create-release:
+    runs-on: ubuntu-latest
+    outputs:
+      release_id: ${{ steps.create.outputs.id }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Generate commit summary
+        id: commits
+        run: |
+          PREV_TAG=$(git tag --sort=-version:refname | grep -v "^${{ github.ref_name }}$" | head -1)
+          if [ -n "$PREV_TAG" ]; then
+            RANGE="$PREV_TAG..${{ github.ref_name }}"
+          else
+            RANGE="${{ github.ref_name }}"
+          fi
+          NOTES=$(git log "$RANGE" --pretty=format:"- %s (%h)" --no-merges)
+          echo "PREV_TAG=$PREV_TAG" >> $GITHUB_ENV
+          {
+            echo 'NOTES<<EOF'
+            echo "$NOTES"
+            echo 'EOF'
+          } >> $GITHUB_ENV
+
+      - name: Create release
+        id: create
+        uses: softprops/action-gh-release@v2
+        with:
+          body: |
+            ## Changes since ${{ env.PREV_TAG }}
+
+            ${{ env.NOTES }}
+
+  # The binary is a static Go executable (CGO_ENABLED=0): it has no glibc,
+  # OpenSSL or libyaml dependency, so — unlike the original C build — there is
+  # no need to compile inside a pinned old-distro container for compatibility,
+  # and both architectures are cross-compiled from a single x86-64 runner.
+  build-deb:
+    needs: create-release
+    strategy:
+      matrix:
+        arch: [amd64, arm64]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Build deb
+        run: |
+          VERSION="${{ github.ref_name }}"
+          VERSION="${VERSION#v}"
+          make deb DEB_ARCH=${{ matrix.arch }} DEB_VERSION=$VERSION
+
+      - name: Upload to GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: build/*.deb
+
+  build-rpm:
+    needs: create-release
+    strategy:
+      matrix:
+        arch: [x86_64, aarch64]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Install rpmbuild
+        run: sudo apt-get update -q && sudo apt-get install -y -q rpm
+
+      - name: Build rpm
+        run: |
+          TAG="${{ github.ref_name }}"
+          VERSION="${TAG#v}"
+          RPM_VER="${VERSION%%-*}"
+          RPM_REL="${VERSION#*-}"
+          if [ "$RPM_REL" = "$VERSION" ]; then RPM_REL="1"; fi
+          make rpm RPM_ARCH=${{ matrix.arch }} RPM_VERSION=$RPM_VER RPM_RELEASE=$RPM_REL
+
+      - name: Upload to GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: build/rpm/RPMS/**/*.rpm

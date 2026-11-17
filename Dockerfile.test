@@ -1,0 +1,4 @@
+# Toolchain image for running the Go test suite (with the race detector, which
+# needs cgo/gcc) without installing Go locally.
+FROM golang:1.26-bookworm
+WORKDIR /microtunnel

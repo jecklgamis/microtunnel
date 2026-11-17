@@ -1,0 +1,7 @@
+build/
+.idea/
+/microtunnel
+# Go test binaries
+*.test
+!Dockerfile.test
+*.out

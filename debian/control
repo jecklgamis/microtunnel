@@ -1,0 +1,11 @@
+Package: microtunnel
+Version: 1.0.0
+Section: net
+Priority: optional
+Architecture: amd64
+Depends: iproute2
+Maintainer: Jerrico Gamis <jecklgamis@gmail.com>
+Description: Hub-and-spoke layer 3 overlay network over UDP
+ A simple Linux VPN written in Go, using a TUN virtual interface and UDP transport.
+ Implements X25519 key exchange, AES-256-GCM encryption, identity hiding,
+ AllowedIPs routing, replay protection, and session rekeying.

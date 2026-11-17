@@ -1,0 +1,13 @@
+[Unit]
+Description=Microtunnel - Peer
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+ExecStart=/usr/bin/microtunnel -c /etc/microtunnel/peer.yaml
+Restart=on-failure
+RestartSec=5
+AmbientCapabilities=CAP_NET_ADMIN
+
+[Install]
+WantedBy=multi-user.target
