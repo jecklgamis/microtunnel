@@ -26,7 +26,25 @@ func (p *Peer) ReloadFrom(path string) (ReloadResult, error) {
 	if err != nil {
 		return ReloadResult{}, err
 	}
-	return p.Reload(cfg.Peers)
+	res, err := p.Reload(cfg.Peers)
+	if err == nil {
+		p.warnUnrouted(cfg.Peers)
+	}
+	return res, err
+}
+
+// warnUnrouted logs, once each, allowed_ips of the reloaded peers that have no
+// kernel route (routes are fixed at startup, so a new LAN behind a peer is
+// silently unreachable until tunnel_routes is updated and the node restarted).
+func (p *Peer) warnUnrouted(peers []config.Peer) {
+	p.warnMu.Lock()
+	defer p.warnMu.Unlock()
+	for _, w := range config.UnroutedWarnings(p.tunnelAddr, p.tunnelRoutes, peers) {
+		if !p.warned[w] {
+			p.warned[w] = true
+			logx.Warnf("%s", w)
+		}
+	}
 }
 
 // Reload makes the running peer set equal to peers without disturbing

@@ -43,5 +43,5 @@ func (c *Config) Warnings() []string {
 			w = append(w, fmt.Sprintf("a peer uses the publicly known demo key %q (its private key is in the repository); anyone can impersonate it. Generate real keys with `microtunnel keygen`", name))
 		}
 	}
-	return w
+	return append(w, c.UnroutedWarnings()...)
 }

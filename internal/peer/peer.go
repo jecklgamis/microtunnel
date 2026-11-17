@@ -48,6 +48,13 @@ type Peer struct {
 
 	workers int
 
+	// Tunnel settings applied at startup, kept to flag unrouted allowed_ips on
+	// a live reload; warned remembers what was already reported.
+	tunnelAddr   netip.Prefix
+	tunnelRoutes []netip.Prefix
+	warnMu       sync.Mutex
+	warned       map[string]bool
+
 	// Timing (seconds in the YAML; Durations here so tests can shrink them).
 	keepalive     time.Duration
 	rekeyAfter    time.Duration
@@ -70,6 +77,9 @@ func New(cfg *config.Config, static *ecdh.PrivateKey, dev Device, conn *net.UDPC
 		static:        static,
 		staticPub:     proto.PubBytes(static),
 		workers:       cfg.WorkerThreads,
+		tunnelAddr:    cfg.TunnelAddress,
+		tunnelRoutes:  cfg.TunnelRoutes,
+		warned:        map[string]bool{},
 		keepalive:     time.Duration(cfg.KeepaliveInterval) * time.Second,
 		rekeyAfter:    time.Duration(cfg.RekeyAfter) * time.Second,
 		reconnect:     time.Duration(cfg.ReconnectInterval) * time.Second,
@@ -88,6 +98,9 @@ func New(cfg *config.Config, static *ecdh.PrivateKey, dev Device, conn *net.UDPC
 		p.psk = &k
 	}
 	p.hsSize = proto.HandshakeSize(p.psk != nil)
+	for _, w := range cfg.UnroutedWarnings() { // main logs these at startup
+		p.warned[w] = true
+	}
 
 	for i := range cfg.Peers {
 		pc := newPeerConfig(&cfg.Peers[i])

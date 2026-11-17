@@ -572,3 +572,34 @@ func TestPlaceholderPSKIsRejected(t *testing.T) {
 		}
 	}
 }
+
+func TestUnroutedWarnings(t *testing.T) {
+	const key = "0000000000000000000000000000000000000000000000000000000000000001"
+	cfg := func(extra string) *Config {
+		return mustParse(t, "interface: t0\ntunnel_address: 10.9.0.2/24\n"+extra+"peers:\n  - public_key: "+key+"\n    allowed_ips: [10.9.0.0/24, 10.9.0.7/32, 192.168.50.0/24]\n")
+	}
+	// The overlay subnet is routed automatically; the LAN is not.
+	w := cfg("").UnroutedWarnings()
+	if len(w) != 1 || !strings.Contains(w[0], "192.168.50.0/24") || !strings.Contains(w[0], "tunnel_routes") {
+		t.Fatalf("warnings = %q", w)
+	}
+	// A tunnel_routes entry (or a wider one) silences it.
+	for _, r := range []string{"192.168.50.0/24", "192.168.0.0/16"} {
+		if w := cfg("tunnel_routes: [" + r + "]\n").UnroutedWarnings(); len(w) != 0 {
+			t.Errorf("route %s: unexpected warnings %q", r, w)
+		}
+	}
+	// A narrower route does not cover the wider allowed prefix.
+	if w := cfg("tunnel_routes: [192.168.50.0/25]\n").UnroutedWarnings(); len(w) != 1 {
+		t.Errorf("narrow route: warnings = %q", w)
+	}
+	// Without tunnel_address the operator owns the routes, so stay quiet.
+	noAddr := mustParse(t, "interface: t0\npeers:\n  - public_key: "+key+"\n    allowed_ips: [192.168.50.0/24]\n")
+	if w := noAddr.UnroutedWarnings(); len(w) != 0 {
+		t.Errorf("no tunnel_address: warnings = %q", w)
+	}
+	// They are part of Warnings().
+	if w := cfg("").Warnings(); len(w) != 1 {
+		t.Errorf("Warnings() = %q", w)
+	}
+}
