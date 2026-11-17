@@ -19,6 +19,6 @@ ROOT="${SCRIPT_DIR}/.."
 CONFIG="$(cd "$(dirname "$1")" && pwd)/$(basename "$1")"
 
 if [[ ! -x "${ROOT}/microtunnel" ]] || ! "${ROOT}/microtunnel" -version >/dev/null 2>&1; then
-    (cd "${ROOT}" && make host)
+    (cd "${ROOT}" && make build)
 fi
 exec sudo "${ROOT}/microtunnel" -c "${CONFIG}"

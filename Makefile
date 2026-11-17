@@ -28,25 +28,20 @@ rpm: BIN_VERSION = $(RPM_VERSION)
 LDFLAGS = -s -w -X main.version=$(BIN_VERSION)
 GOBUILD  = CGO_ENABLED=0 GOOS=linux $(GO) build -trimpath -ldflags "$(LDFLAGS)"
 
-.PHONY: all build host linux macos test test-race vet fmt fmt-check check image run-shell run test-image \
+.PHONY: all build linux macos test test-race vet fmt fmt-check check image run-shell run test-image \
         test-using-docker integration-test dynamic-test deb rpm clean FORCE
 
 all: build
 
-# Builds ./microtunnel for Linux on the host architecture (it can be cross-built
-# from macOS; run it with Docker there).
+# Builds ./microtunnel for the machine you are on (current OS and architecture).
+# Override for a cross-build, e.g. `GOOS=linux GOARCH=arm64 make build`.
+# On macOS run the result with sudo (creating a utun device needs root).
 build:
-	$(GOBUILD) -o $(BINARY) $(PKG)
-	chmod +x $(BINARY)
-
-# Builds ./microtunnel for the machine you are on (GOOS/GOARCH of the host).
-# Use this on macOS; run it with sudo (creating a utun device needs root).
-host:
 	CGO_ENABLED=0 $(GO) build -trimpath -ldflags "$(LDFLAGS)" -o $(BINARY) $(PKG)
 	chmod +x $(BINARY)
 
 # Release binaries for Linux (static, no libc needed), named per architecture.
-linux: build/$(BINARY)-linux-amd64 build/$(BINARY)-linux-arm64
+linux: build/$(BINARY)-linux-amd64	 build/$(BINARY)-linux-arm64
 
 build/$(BINARY)-linux-%: FORCE
 	@mkdir -p build

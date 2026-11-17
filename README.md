@@ -79,7 +79,7 @@ sudo apt install iproute2
 
 **2. Build** (once; copy the static `microtunnel` binary to the other hosts — it can be cross-built, e.g. `GOARCH=arm64 make build`)
 ```bash
-make all
+make build
 ```
 
 **3. Copy keys and config, create the TUN interface, and edit `endpoint:` — each host only needs its own peer's files.** Assume the relay's public/reachable address is `203.0.113.10`.
@@ -132,7 +132,7 @@ A Mac is a regular peer (behind NAT, dialing out to the relay):
 ```bash
 brew install go                      # Go 1.26+
 git clone git@github.com:jecklgamis/microtunnel.git && cd microtunnel
-make host                            # builds ./microtunnel for this Mac  (`make macos` builds arm64 + amd64 into build/)
+make build                           # builds ./microtunnel for this Mac  (`make macos` builds arm64 + amd64 into build/)
 
 # 1. Generate this Mac's key pair (openssl: `brew install openssl` if needed)
 cd config && ../scripts/generate-peer-keys.sh my-mac && cd ..
@@ -289,10 +289,9 @@ make check              # gofmt check + go vet (macOS and Linux) + race tests
 make test-using-docker  # run the race-detector suite on Linux in a golang container
 make integration-test   # full test with real TUN devices: relay + 2 peers in Docker, ping + curl
 make dynamic-test       # real-TUN test of `peers_dir` + `microtunnel peer add/remove` against a running relay
-make all                # build the static ./microtunnel binary (linux, host architecture)
-make host               # build ./microtunnel for the machine you're on (use on macOS)
-make macos              # build macOS binaries (arm64 + amd64) into build/
+make build              # build ./microtunnel for the machine you're on (current OS and architecture)
 make linux              # static Linux binaries (amd64 + arm64) into build/
+make macos              # macOS binaries (arm64 + amd64) into build/
 make image              # build the Docker image (microtunnel-peer:latest)
 make deb | make rpm     # build packages (DEB_ARCH=amd64|arm64, RPM_ARCH=x86_64|aarch64)
 ```

@@ -139,8 +139,7 @@ On the TUN→UDP path, destination IP is looked up using longest-prefix match ac
 
 ## Build
 ```
-make all                # build static ./microtunnel (linux, host arch)
-make host               # build ./microtunnel for the current machine (use on macOS; run with sudo)
+make build              # build ./microtunnel for the current OS/arch (`make all` is an alias; override with GOOS/GOARCH; on macOS run with sudo)
 make linux              # build/microtunnel-linux-{amd64,arm64} (static; the release workflow uploads these)
 make macos              # build/microtunnel-darwin-{arm64,amd64}
 make test               # go test ./... natively (no root/TUN/Docker needed; works on macOS)
