@@ -141,6 +141,7 @@ On the TUN→UDP path, destination IP is looked up using longest-prefix match ac
 ```
 make all                # build static ./microtunnel (linux, host arch)
 make host               # build ./microtunnel for the current machine (use on macOS; run with sudo)
+make linux              # build/microtunnel-linux-{amd64,arm64} (static; the release workflow uploads these)
 make macos              # build/microtunnel-darwin-{arm64,amd64}
 make test               # go test ./... natively (no root/TUN/Docker needed; works on macOS)
 make test-race          # go test -race
@@ -177,7 +178,7 @@ make image
 ```
 
 ## Docker
-- `Dockerfile` — multi-stage (`golang:1.26-bookworm` builder → `debian:bookworm-slim`); includes iproute2, nginx, curl, ping, ifconfig, ssh, Envoy proxy; bundles `config/` into the image. No libssl/libyaml needed.
+- `Dockerfile` — multi-stage, multi-arch (builder runs on `$BUILDPLATFORM` and cross-compiles for `$TARGETARCH`; `build.yaml` publishes linux/amd64 + linux/arm64) (`golang:1.26-bookworm` builder → `debian:bookworm-slim`); includes iproute2, nginx, curl, ping, ifconfig, ssh, Envoy proxy; bundles `config/` into the image. No libssl/libyaml needed.
 - `scripts/docker-entrypoint.sh` — creates TUN, starts nginx, optionally starts Envoy (when `ENVOY_UPSTREAM_HOST` is set), execs `microtunnel -c $PEER_CONFIG`
 - `scripts/common.sh` — shared helpers: OpenSSL detection (Homebrew on macOS), `extract_pub`, `detect_local_ip` (macOS/Linux)
 - `scripts/extract-keys-hex.sh <file.key>` — prints private and public key hex from an X25519 `.key` PEM file

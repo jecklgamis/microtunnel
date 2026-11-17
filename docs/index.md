@@ -30,6 +30,17 @@ Peers behind NAT connect outbound to a relay with a public IP. All peer-to-peer 
 
 Download the latest release package from the [releases page](https://github.com/jecklgamis/microtunnel/releases).
 
+Each release provides, for both **amd64/x86_64** and **arm64/aarch64**:
+
+| Asset | Use |
+|-------|-----|
+| `microtunnel_<version>_<arch>.deb` | Debian / Ubuntu package (see below) |
+| `microtunnel-<version>-<release>.<arch>.rpm` | Red Hat / Fedora / CentOS package (see below) |
+| `microtunnel-linux-amd64`, `microtunnel-linux-arm64` | Plain static Linux binary: `chmod +x`, then run it. No packages or libraries needed |
+| `microtunnel-darwin-arm64`, `microtunnel-darwin-amd64` | macOS binary (Apple silicon / Intel). Unsigned: run `xattr -d com.apple.quarantine <file>` after downloading |
+
+A multi-architecture Docker image (linux/amd64 and linux/arm64) is published as `jecklgamis/microtunnel`.
+
 ### Debian / Ubuntu
 
 ```bash

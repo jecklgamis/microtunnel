@@ -1,11 +1,16 @@
-FROM golang:1.26-bookworm AS builder
+# The builder always runs on the build host's own architecture and
+# cross-compiles to the target (CGO_ENABLED=0), so a multi-platform build never
+# has to run the Go toolchain under emulation.
+FROM --platform=$BUILDPLATFORM golang:1.26-bookworm AS builder
+ARG TARGETOS
+ARG TARGETARCH
 
 WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
 COPY cmd ./cmd
 COPY internal ./internal
-RUN CGO_ENABLED=0 go build -trimpath -ldflags "-s -w" -o /microtunnel ./cmd/microtunnel
+RUN CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH:-amd64} go build -trimpath -ldflags "-s -w" -o /microtunnel ./cmd/microtunnel
 
 FROM debian:bookworm-slim
 

@@ -96,6 +96,28 @@ jobs:
         with:
           files: build/rpm/RPMS/**/*.rpm
 
+  # Plain static Linux binaries (amd64 + arm64) for people who don't want a
+  # package: download, chmod +x, run. Same binaries as inside the deb/rpm.
+  build-linux:
+    needs: create-release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+
+      - name: Build Linux binaries
+        run: |
+          VERSION="${{ github.ref_name }}"
+          VERSION="${VERSION#v}"
+          make linux VERSION=$VERSION
+
+      - name: Upload to GitHub Release
+        uses: softprops/action-gh-release@v3
+        with:
+          files: build/microtunnel-linux-*
+
   # Static binaries for macOS (Apple silicon + Intel), cross-compiled on Linux.
   # Run with sudo; see "Running on macOS" in the README. Unsigned, so Gatekeeper
   # may require `xattr -d com.apple.quarantine <file>` after download.

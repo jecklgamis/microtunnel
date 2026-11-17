@@ -28,7 +28,7 @@ rpm: BIN_VERSION = $(RPM_VERSION)
 LDFLAGS = -s -w -X main.version=$(BIN_VERSION)
 GOBUILD  = CGO_ENABLED=0 GOOS=linux $(GO) build -trimpath -ldflags "$(LDFLAGS)"
 
-.PHONY: all build host macos test test-race vet fmt fmt-check check image run-shell run test-image \
+.PHONY: all build host linux macos test test-race vet fmt fmt-check check image run-shell run test-image \
         test-using-docker integration-test dynamic-test deb rpm clean FORCE
 
 all: build
@@ -44,6 +44,13 @@ build:
 host:
 	CGO_ENABLED=0 $(GO) build -trimpath -ldflags "$(LDFLAGS)" -o $(BINARY) $(PKG)
 	chmod +x $(BINARY)
+
+# Release binaries for Linux (static, no libc needed), named per architecture.
+linux: build/$(BINARY)-linux-amd64 build/$(BINARY)-linux-arm64
+
+build/$(BINARY)-linux-%: FORCE
+	@mkdir -p build
+	GOARCH=$* $(GOBUILD) -o $@ $(PKG)
 
 # Release binaries for macOS (Apple silicon and Intel).
 macos: build/$(BINARY)-darwin-arm64 build/$(BINARY)-darwin-amd64

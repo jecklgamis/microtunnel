@@ -292,6 +292,7 @@ make dynamic-test       # real-TUN test of `peers_dir` + `microtunnel peer add/r
 make all                # build the static ./microtunnel binary (linux, host architecture)
 make host               # build ./microtunnel for the machine you're on (use on macOS)
 make macos              # build macOS binaries (arm64 + amd64) into build/
+make linux              # static Linux binaries (amd64 + arm64) into build/
 make image              # build the Docker image (microtunnel-peer:latest)
 make deb | make rpm     # build packages (DEB_ARCH=amd64|arm64, RPM_ARCH=x86_64|aarch64)
 ```
