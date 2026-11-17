@@ -71,6 +71,8 @@ Nothing is started and no config or keys are installed. Configure with `sudo mic
 
 Uninstall: `sudo /usr/local/share/microtunnel/uninstall.sh` (`--purge` also deletes `/etc/microtunnel`).
 
+**Homebrew:** `packaging/homebrew/microtunnel.rb` is a formula that builds from source (copy it into a tap as `Formula/microtunnel.rb`). After `brew install`, run `sudo microtunnel init ...` as above and use `sudo brew services start microtunnel` instead of `launchctl`.
+
 Both packages install:
 
 | Path | Description |
