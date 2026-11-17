@@ -168,30 +168,6 @@ Notes:
 
 ---
 
-## Quick Setup (`microtunnel init`)
-
-One command per machine writes a complete, validated config (and the machine's key, which is reused if it exists and never overwritten):
-
-```bash
-# relay
-sudo microtunnel init relay --endpoint relay.example.com:5040      # key, random PSK, tunnel_address, peers_dir, admin socket
-sudo systemctl enable --now microtunnel                            # the same service on every machine
-
-# each peer (init relay prints this line, with the PSK in an env var so it stays out of `ps`)
-MICROTUNNEL_PSK=<psk> sudo -E microtunnel init peer --relay relay.example.com:5040 --relay-key <relay public key>
-sudo microtunnel peer add laptop -public-key <printed by init peer>      # on the relay; prints the assigned address
-MICROTUNNEL_PSK=<psk> sudo -E microtunnel init peer ... --address 10.9.0.2/24 --force   # key kept; applies the address
-sudo systemctl enable --now microtunnel
-```
-
-The same program is a relay or a peer; **the config decides**, so there is one systemd unit: `microtunnel` runs `/etc/microtunnel/microtunnel.yaml` (and refuses to start until it exists). `init` and `join` write `microtunnel.yaml` and `microtunnel.key` by default; with `--name home` (or a `join` token named `home`) they write `home.yaml`, which runs as `microtunnel@home`, for a machine in more than one overlay (give each config its own `interface:`). The `peer` commands read `/etc/microtunnel/microtunnel.yaml` by default (`-c` overrides).
-
-Rules: an existing config is never overwritten without `-force` (which, for a relay, generates a *new* pre-shared key and says so); an existing private key is reused, never replaced; the written config is loaded back through the same validator the daemon uses; secrets are mode 0600. `-start` runs the `systemctl enable --now` step.
-
-For many machines use [self-service enrollment](#enrollment-service-self-service-join) instead: `microtunnel join` does the peer's whole side in one command. Verify `init` with real TUN devices: `make init-test`.
-
----
-
 ## Dynamic Peers (no restarts)
 
 A relay normally lists every peer in its YAML, and editing that means a restart that drops every session. Instead, point the relay at a directory with **`peers_dir`** and manage peers with the built-in CLI. A running relay notices changes within a second or two, and **sessions of unaffected peers are never interrupted**.
