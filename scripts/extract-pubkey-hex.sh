@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Print the X25519 public key from a .crt (public key PEM) file as hex.
-# Usage: microtunnel-extract-pubkey-hex.sh <file.crt>
+# Usage: extract-pubkey-hex.sh <file.crt>
 set -euo pipefail
 
 if [[ $# -ne 1 ]]; then

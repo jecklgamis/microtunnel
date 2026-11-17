@@ -20,7 +20,7 @@ RUN apt-get update && apt-get install -y \
 
 WORKDIR /microtunnel
 COPY config/nginx-keepalive.conf /etc/nginx/conf.d/keepalive.conf
-COPY scripts/docker-entrypoint.sh scripts/microtunnel-create-tunnel.sh config/envoy.yaml.tmpl config/index.html.tmpl ./
+COPY scripts/docker-entrypoint.sh scripts/create-tunnel.sh config/envoy.yaml.tmpl config/index.html.tmpl ./
 COPY --from=builder /microtunnel ./
 COPY config/ ./config/
 

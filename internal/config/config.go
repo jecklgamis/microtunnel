@@ -72,7 +72,7 @@ type Config struct {
 	// TunnelAddress is this node's overlay address, e.g. 10.9.0.2/24; its subnet
 	// is routed through the interface automatically on macOS. TunnelRoutes lists
 	// extra CIDRs to route through it. Unset means "configure it externally"
-	// (e.g. scripts/microtunnel-create-tunnel.sh on Linux).
+	// (e.g. scripts/create-tunnel.sh on Linux).
 	TunnelAddress netip.Prefix
 	TunnelRoutes  []netip.Prefix
 	Peers         []Peer

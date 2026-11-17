@@ -26,11 +26,11 @@ mkdir -p %{buildroot}/usr/lib/systemd/system
 mkdir -p %{buildroot}/etc/microtunnel
 
 install -m 755 %{_sourcedir}/%{bin_path}                 %{buildroot}/usr/bin/microtunnel
-install -m 755 %{_sourcedir}/scripts/microtunnel-create-tunnel.sh        %{buildroot}/usr/share/microtunnel/
-install -m 755 %{_sourcedir}/scripts/microtunnel-extract-keys-hex.sh    %{buildroot}/usr/bin/
-install -m 755 %{_sourcedir}/scripts/microtunnel-extract-pubkey-hex.sh  %{buildroot}/usr/bin/
-install -m 755 %{_sourcedir}/scripts/microtunnel-generate-peer-keys.sh  %{buildroot}/usr/bin/
-install -m 755 %{_sourcedir}/scripts/microtunnel-create-tunnel.sh       %{buildroot}/usr/bin/
+install -m 755 %{_sourcedir}/scripts/create-tunnel.sh        %{buildroot}/usr/share/microtunnel/microtunnel-create-tunnel.sh
+install -m 755 %{_sourcedir}/scripts/extract-keys-hex.sh    %{buildroot}/usr/bin/microtunnel-extract-keys-hex.sh
+install -m 755 %{_sourcedir}/scripts/extract-pubkey-hex.sh  %{buildroot}/usr/bin/microtunnel-extract-pubkey-hex.sh
+install -m 755 %{_sourcedir}/scripts/generate-peer-keys.sh  %{buildroot}/usr/bin/microtunnel-generate-peer-keys.sh
+install -m 755 %{_sourcedir}/scripts/create-tunnel.sh       %{buildroot}/usr/bin/microtunnel-create-tunnel.sh
 install -m 644 %{_sourcedir}/rpm/systemd/microtunnel-relay.service    %{buildroot}/usr/lib/systemd/system/
 install -m 644 %{_sourcedir}/rpm/systemd/microtunnel-peer.service      %{buildroot}/usr/lib/systemd/system/
 install -m 644 %{_sourcedir}/rpm/systemd/microtunnel-peer-1.service   %{buildroot}/usr/lib/systemd/system/

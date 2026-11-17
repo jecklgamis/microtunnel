@@ -105,11 +105,11 @@ deb: build/$(BINARY)-$(DEB_ARCH)
 	mkdir -p $(DEB_ROOT)/lib/systemd/system
 	mkdir -p $(DEB_ROOT)/etc/microtunnel
 	install -m 755 build/$(BINARY)-$(DEB_ARCH) $(DEB_ROOT)/usr/bin/$(BINARY)
-	install -m 755 scripts/microtunnel-create-tunnel.sh $(DEB_ROOT)/usr/share/microtunnel/
-	install -m 755 scripts/microtunnel-extract-keys-hex.sh $(DEB_ROOT)/usr/bin/
-	install -m 755 scripts/microtunnel-extract-pubkey-hex.sh $(DEB_ROOT)/usr/bin/
-	install -m 755 scripts/microtunnel-generate-peer-keys.sh $(DEB_ROOT)/usr/bin/
-	install -m 755 scripts/microtunnel-create-tunnel.sh $(DEB_ROOT)/usr/bin/
+	install -m 755 scripts/create-tunnel.sh $(DEB_ROOT)/usr/share/microtunnel/microtunnel-create-tunnel.sh
+	install -m 755 scripts/extract-keys-hex.sh $(DEB_ROOT)/usr/bin/microtunnel-extract-keys-hex.sh
+	install -m 755 scripts/extract-pubkey-hex.sh $(DEB_ROOT)/usr/bin/microtunnel-extract-pubkey-hex.sh
+	install -m 755 scripts/generate-peer-keys.sh $(DEB_ROOT)/usr/bin/microtunnel-generate-peer-keys.sh
+	install -m 755 scripts/create-tunnel.sh $(DEB_ROOT)/usr/bin/microtunnel-create-tunnel.sh
 	install -m 644 debian/systemd/microtunnel-relay.service $(DEB_ROOT)/lib/systemd/system/
 	install -m 644 debian/systemd/microtunnel-peer.service $(DEB_ROOT)/lib/systemd/system/
 	install -m 644 debian/systemd/microtunnel-peer-1.service $(DEB_ROOT)/lib/systemd/system/

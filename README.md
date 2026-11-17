@@ -88,7 +88,7 @@ make all
 ```bash
 sudo mkdir -p /etc/microtunnel
 sudo cp config/relay.key config/relay.yaml /etc/microtunnel/
-sudo ./scripts/microtunnel-create-tunnel.sh microtunnel0 10.9.0.1/24
+sudo ./scripts/create-tunnel.sh microtunnel0 10.9.0.1/24
 sudo ./microtunnel -c /etc/microtunnel/relay.yaml
 ```
 
@@ -96,7 +96,7 @@ sudo ./microtunnel -c /etc/microtunnel/relay.yaml
 ```bash
 sudo mkdir -p /etc/microtunnel
 sudo cp config/peer-1.key config/peer-1.yaml /etc/microtunnel/
-sudo ./scripts/microtunnel-create-tunnel.sh microtunnel0 10.9.0.2/24 10.9.0.0/24
+sudo ./scripts/create-tunnel.sh microtunnel0 10.9.0.2/24 10.9.0.0/24
 # edit /etc/microtunnel/peer-1.yaml: peers[0].endpoint: 203.0.113.10:5040
 sudo ./microtunnel -c /etc/microtunnel/peer-1.yaml
 ```
@@ -105,7 +105,7 @@ sudo ./microtunnel -c /etc/microtunnel/peer-1.yaml
 ```bash
 sudo mkdir -p /etc/microtunnel
 sudo cp config/peer-2.key config/peer-2.yaml /etc/microtunnel/
-sudo ./scripts/microtunnel-create-tunnel.sh microtunnel0 10.9.0.3/24 10.9.0.0/24
+sudo ./scripts/create-tunnel.sh microtunnel0 10.9.0.3/24 10.9.0.0/24
 # edit /etc/microtunnel/peer-2.yaml: peers[0].endpoint: 203.0.113.10:5040
 sudo ./microtunnel -c /etc/microtunnel/peer-2.yaml
 ```
@@ -125,7 +125,7 @@ The binary runs natively on macOS (Apple silicon and Intel) using a `utun` devic
 macOS differs from Linux in two ways, both handled by config:
 
 - Tunnel devices are named `utunN` and the kernel picks the next free one, so set `interface: utun` (a specific `utun5` also works; any other name is ignored and the kernel chooses).
-- A utun device only exists once the process has opened it, so the helper script `microtunnel-create-tunnel.sh` cannot pre-create it. Instead the program configures the interface itself: set **`tunnel_address`** (this Mac's overlay IP, e.g. `10.9.0.4/24`) and optionally **`tunnel_routes`** (extra CIDRs to route through the tunnel). The overlay subnet is routed automatically, and the interface MTU is set to 1428. These two keys also work on Linux.
+- A utun device only exists once the process has opened it, so the helper script `create-tunnel.sh` cannot pre-create it. Instead the program configures the interface itself: set **`tunnel_address`** (this Mac's overlay IP, e.g. `10.9.0.4/24`) and optionally **`tunnel_routes`** (extra CIDRs to route through the tunnel). The overlay subnet is routed automatically, and the interface MTU is set to 1428. These two keys also work on Linux.
 
 A Mac is a regular peer (behind NAT, dialing out to the relay):
 
@@ -135,8 +135,8 @@ git clone git@github.com:jecklgamis/microtunnel.git && cd microtunnel
 make host                            # builds ./microtunnel for this Mac  (`make macos` builds arm64 + amd64 into build/)
 
 # 1. Generate this Mac's key pair (openssl: `brew install openssl` if needed)
-cd config && ../scripts/microtunnel-generate-peer-keys.sh my-mac && cd ..
-./scripts/microtunnel-extract-pubkey-hex.sh config/my-mac.crt   # give this hex key to the relay's operator
+cd config && ../scripts/generate-peer-keys.sh my-mac && cd ..
+./scripts/extract-pubkey-hex.sh config/my-mac.crt   # give this hex key to the relay's operator
 
 # 2. On the relay, add the Mac as a peer:
 #      - public_key: <hex from above>
@@ -369,7 +369,7 @@ The original C implementation was reviewed for memory safety, injection vulnerab
 |---------|------------------------|
 | `strcpy()` after TUNSETIFF ioctl, unbounded `sprintf()` in `bytes_to_hex()` | No longer applicable — Go is memory-safe, and the TUN name goes through `unix.Ifreq` |
 | Unquoted `${PEER_ROUTES}` expansion in `scripts/docker-entrypoint.sh` | Unchanged; false positive — intentional word-splitting of a trusted operator-set Docker env var; no untrusted input path |
-| `TUNNEL_NAME` in sysctl command in `scripts/microtunnel-create-tunnel.sh` | Unchanged; false positive — always hardcoded or set by the container operator who already has root |
+| `TUNNEL_NAME` in sysctl command in `scripts/create-tunnel.sh` | Unchanged; false positive — always hardcoded or set by the container operator who already has root |
 
 Cryptography uses only the Go standard library (`crypto/ecdh` X25519, `crypto/aes` + GCM, `crypto/hmac`, `crypto/sha256`). X25519 results that are all-zero (low-order peer points) are rejected, and HMAC and identity comparisons are constant-time.
 

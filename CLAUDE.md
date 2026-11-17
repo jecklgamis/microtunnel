@@ -25,10 +25,10 @@ peer-2 (10.9.0.3) ──┘
 - **peer-1 / peer-2** — behind NAT, connect outbound to relay
 
 ### Key Provisioning
-Keys are X25519 key pairs stored in PEM files (PKCS#8 private `.key`, PKIX public `.crt`). Use `scripts/microtunnel-generate-peer-keys.sh` (needs `openssl`) to generate them.
+Keys are X25519 key pairs stored in PEM files (PKCS#8 private `.key`, PKIX public `.crt`). Use `scripts/generate-peer-keys.sh` (needs `openssl`) to generate them.
 
 ```
-./scripts/microtunnel-generate-peer-keys.sh relay peer-1 peer-2
+./scripts/generate-peer-keys.sh relay peer-1 peer-2
 # produces: relay.key/crt, peer-1.key/crt, peer-2.key/crt
 ```
 
@@ -69,7 +69,7 @@ peers:
     allowed_ips:
       - 10.9.0.0/24
 ```
-Unknown keys are ignored. On macOS use `interface: utun` (kernel assigns `utunN`; a non-`utunN` name is ignored) plus `tunnel_address`, because a utun device only exists once opened — see `config/peer-macos.yaml` and `scripts/run-macos.sh` (runs `sudo ./microtunnel`). When `tunnel_address` is unset the interface is expected to be configured externally (Docker entrypoint / `microtunnel-create-tunnel.sh` on Linux). Limits: 64 peers, 16 `allowed_ips` per peer, interface name ≤ 15 chars. Endpoint hostnames are resolved at startup (failure is fatal) and re-resolved before each reconnect.
+Unknown keys are ignored. On macOS use `interface: utun` (kernel assigns `utunN`; a non-`utunN` name is ignored) plus `tunnel_address`, because a utun device only exists once opened — see `config/peer-macos.yaml` and `scripts/run-macos.sh` (runs `sudo ./microtunnel`). When `tunnel_address` is unset the interface is expected to be configured externally (Docker entrypoint / `create-tunnel.sh` on Linux). Limits: 64 peers, 16 `allowed_ips` per peer, interface name ≤ 15 chars. Endpoint hostnames are resolved at startup (failure is fatal) and re-resolved before each reconnect.
 
 ### Session Management
 - Sessions live in a flat array (`table.sessions[]`, max 64)
@@ -174,15 +174,15 @@ make image
 - `Dockerfile` — multi-stage (`golang:1.26-bookworm` builder → `debian:bookworm-slim`); includes iproute2, nginx, curl, ping, ifconfig, ssh, Envoy proxy; bundles `config/` into the image. No libssl/libyaml needed.
 - `scripts/docker-entrypoint.sh` — creates TUN, starts nginx, optionally starts Envoy (when `ENVOY_UPSTREAM_HOST` is set), execs `microtunnel -c $PEER_CONFIG`
 - `scripts/common.sh` — shared helpers: OpenSSL detection (Homebrew on macOS), `extract_pub`, `detect_local_ip` (macOS/Linux)
-- `scripts/microtunnel-extract-keys-hex.sh <file.key>` — prints private and public key hex from an X25519 `.key` PEM file
-- `scripts/microtunnel-extract-pubkey-hex.sh <file.crt>` — prints public key hex from an X25519 `.crt` PEM file
-- `scripts/microtunnel-generate-peer-keys.sh <name> [name2 ...]` — generates X25519 key pairs (`.key` / `.crt`) for each given name
+- `scripts/extract-keys-hex.sh <file.key>` — prints private and public key hex from an X25519 `.key` PEM file
+- `scripts/extract-pubkey-hex.sh <file.crt>` — prints public key hex from an X25519 `.crt` PEM file
+- `scripts/generate-peer-keys.sh <name> [name2 ...]` — generates X25519 key pairs (`.key` / `.crt`) for each given name
 - `config/envoy.yaml.tmpl` — Envoy static config template; two listeners sharing one upstream cluster:
   - **TCP proxy** on `0.0.0.0:15040` — transparent L4 pass-through, one upstream connection per downstream connection
   - **HTTP proxy** on `0.0.0.0:15050` — L7 with upstream connection pooling (~130 requests/connection); recommended for HTTP workloads
   - Admin interface on `0.0.0.0:9901`
-- `scripts/microtunnel-create-tunnel.sh <tunnel> <ip/cidr> [routes...]` — creates TUN interface, assigns overlay IP, disables ICMP redirects
-- `scripts/run-relay.sh` — native Linux wrapper: runs `./microtunnel -c config/relay.yaml` (does not create the TUN interface itself — run `microtunnel-create-tunnel.sh` first)
+- `scripts/create-tunnel.sh <tunnel> <ip/cidr> [routes...]` — creates TUN interface, assigns overlay IP, disables ICMP redirects
+- `scripts/run-relay.sh` — native Linux wrapper: runs `./microtunnel -c config/relay.yaml` (does not create the TUN interface itself — run `create-tunnel.sh` first)
 - `scripts/run-peer-1.sh` / `scripts/run-peer-2.sh` — native Linux wrappers for `config/peer-1.yaml` / `config/peer-2.yaml`
 - `scripts/run-relay-in-docker.sh` — runs relay container from `config/relay.yaml` on the shared `microtunnel-net` Docker network (created if missing); mounts key, exposes UDP 5040 and Envoy admin 9901
 - `scripts/run-peer-1-in-docker.sh` / `scripts/run-peer-2-in-docker.sh` — run peer containers on `microtunnel-net`; mount key, expose ports for UDP tunnel, Envoy TCP/HTTP proxy, and admin
