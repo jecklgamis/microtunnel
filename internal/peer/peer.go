@@ -349,10 +349,14 @@ func (p *Peer) handleData(src netip.AddrPort, pkt []byte, now time.Time, w *work
 		[proto.HeaderSize]byte(plain[:proto.HeaderSize]) == proto.Header
 	if headerOK {
 		seq = binary.BigEndian.Uint64(plain[proto.HeaderSize:])
-		// Skip the replay check for prev-key packets: their old sequence
-		// numbers would advance the window and cause the new session's seq
-		// 0,1,2,... to be rejected as replays once the initiator switches keys.
-		if !usedPrevKey && !s.replay.Check(seq) {
+		// Old-key packets are checked against the window that belonged to
+		// that key, so they cannot be replayed during the grace period and
+		// never disturb the new key's window.
+		rw := &s.replay
+		if usedPrevKey {
+			rw = &s.prevReplay
+		}
+		if !rw.Check(seq) {
 			replay = true
 		} else {
 			// Only authenticated, non-replayed traffic keeps a session alive.

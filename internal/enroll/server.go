@@ -151,8 +151,14 @@ func (s *Server) enroll(w http.ResponseWriter, r *http.Request) {
 		if errors.As(err, &ae) {
 			switch ae.Status {
 			case http.StatusBadRequest, http.StatusConflict:
-				// Safe to show: names, key format, duplicates. Never a path or stack.
-				code, msg = ae.Status, ae.Message
+				// Fixed text only: the relay's message can carry file paths or
+				// other peers' names, which a token holder must not see.
+				code = ae.Status
+				if code == http.StatusConflict {
+					msg = "that name or public key is already registered"
+				} else {
+					msg = "invalid enrollment request"
+				}
 			default:
 				logx.Errorf("Enroll: relay admin API: %v", err)
 			}
@@ -208,6 +214,12 @@ func (l *limiter) fail(key string) {
 			if time.Since(b.start) > l.window {
 				delete(l.hits, k)
 			}
+		}
+	}
+	if len(l.hits) > 10000 { // still full of live entries: evict an arbitrary one
+		for k := range l.hits {
+			delete(l.hits, k)
+			break
 		}
 	}
 	b := l.hits[key]

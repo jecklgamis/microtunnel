@@ -405,3 +405,26 @@ func TestSessionInitAddressChangeKeepsSessionActive(t *testing.T) {
 		t.Fatal("roaming rekey must keep the session active with a prev key")
 	}
 }
+
+// Old-key packets must stay subject to replay detection during the grace
+// period, using the window that belonged to the old key.
+func TestRekeyKeepsOldReplayWindowForPrevKey(t *testing.T) {
+	tb := newTable()
+	var s session
+	pub, key1, key2 := pubFill(0x11), randKey(0xAA), randKey(0xBB)
+	addr := mustAddr("10.0.0.1:5040")
+	now := time.Now()
+	if err := tb.sessionInit(&s, addr, pub, key1, nil, false, now); err != nil {
+		t.Fatal(err)
+	}
+	s.replay.Check(7)
+	if err := tb.sessionInit(&s, addr, pub, key2, nil, false, now); err != nil {
+		t.Fatal(err)
+	}
+	if s.prevReplay.Check(7) {
+		t.Fatal("seq 7 was already seen under the old key; replay must be rejected")
+	}
+	if !s.replay.Check(7) {
+		t.Fatal("new key's window must start empty")
+	}
+}

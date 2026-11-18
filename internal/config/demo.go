@@ -38,6 +38,9 @@ func (c *Config) Warnings() []string {
 	if c.HasPSK && slices.Contains(placeholderPSKs, c.PreSharedKey) {
 		w = append(w, fmt.Sprintf("pre_shared_key %q is a well-known placeholder; anyone can compute the handshake authentication. Use a long random secret", c.PreSharedKey))
 	}
+	if c.HasPSK && len(c.PreSharedKey) < 16 && !slices.Contains(placeholderPSKs, c.PreSharedKey) {
+		w = append(w, "pre_shared_key is short; one captured handshake lets an attacker guess it offline. Use at least 16 random characters (e.g. `openssl rand -hex 32`)")
+	}
 	for _, p := range c.Peers {
 		if name, ok := DemoKeyName(p.PublicKey); ok {
 			w = append(w, fmt.Sprintf("a peer uses the publicly known demo key %q (its private key is in the repository); anyone can impersonate it. Generate real keys with `microtunnel keygen`", name))

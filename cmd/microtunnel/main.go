@@ -112,7 +112,7 @@ func run() error {
 	if cfg.HasPSK {
 		logx.Infof("PSK set — handshake will be authenticated")
 	} else {
-		logx.Warnf("No PSK — handshake unauthenticated (MITM-vulnerable)")
+		logx.Warnf("No PSK — handshakes are not authenticated: anyone can make this node run handshakes (peer identities are still pinned)")
 	}
 
 	dev, name, err := tun.Open(cfg.Interface)

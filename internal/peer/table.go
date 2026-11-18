@@ -63,6 +63,7 @@ type session struct {
 	lastSent       time.Time
 	sendSeq        uint64
 	replay         proto.ReplayWindow
+	prevReplay     proto.ReplayWindow // window for prevKey, so old-key packets cannot be replayed
 
 	// Traffic counters (wire bytes and datagrams, keepalives included) for
 	// this peer since its session slot was assigned; reported by Sessions.
@@ -301,9 +302,11 @@ func (t *table) sessionInit(s *session, addr netip.AddrPort, pub [proto.PubKeyLe
 		s.prevAEAD = s.aead
 		s.prevKeyActive = true
 		s.prevKeyExpires = now.Add(t.prevGrace)
+		s.prevReplay = s.replay
 	} else {
 		s.prevKeyActive = false
 		s.prevAEAD = nil
+		s.prevReplay.Reset()
 	}
 	s.key = key
 	s.aead = aead

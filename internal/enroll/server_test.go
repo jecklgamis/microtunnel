@@ -148,8 +148,8 @@ func TestEnrollRelayErrorsDoNotBurnTheToken(t *testing.T) {
 		wantCode int
 		wantMsg  string
 	}{
-		"conflict": {&adminapi.APIError{Status: 409, Message: `peer "x" already exists`}, 409, "already exists"},
-		"invalid":  {&adminapi.APIError{Status: 400, Message: "invalid public key"}, 400, "invalid public key"},
+		"conflict": {&adminapi.APIError{Status: 409, Message: `peer "x" already exists (/etc/microtunnel/peers.d/x.yaml)`}, 409, "already registered"},
+		"invalid":  {&adminapi.APIError{Status: 400, Message: "invalid public key"}, 400, "invalid enrollment request"},
 		"internal": {&adminapi.APIError{Status: 500, Message: "open /etc/microtunnel/relay.key: permission denied"}, 502, "could not register"},
 		"down":     {errors.New("dial unix /run/mt.sock: connect: no such file or directory"), 502, "could not register"},
 	} {
@@ -374,7 +374,7 @@ func TestJoinFailuresLeaveNothingBehindAndKeepTokenUsable(t *testing.T) {
 	tok2, _, _ := e.store.Create("", time.Hour, time.Now())
 	out2 := t.TempDir()
 	if _, err := Join(context.Background(), JoinOptions{URL: e.ts.URL, Token: tok2, Name: "dup", Dir: out2, CAFile: e.caFile}); err == nil ||
-		!strings.Contains(err.Error(), "already exists") {
+		!strings.Contains(err.Error(), "already registered") {
 		t.Fatalf("err=%v", err)
 	}
 	if entries, _ := os.ReadDir(out2); len(entries) != 0 {
