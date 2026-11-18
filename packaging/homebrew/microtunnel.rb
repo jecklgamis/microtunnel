@@ -7,7 +7,9 @@
 #
 # It builds from source, so nothing needs signing or notarizing.
 #
-# To publish a new release: set url to the new tag's tarball and sha256 to
+# The release workflow (update-homebrew job in .github/workflows/release.yml) rewrites
+# url and sha256 in the tap's copy on every tag, so the values in this file go stale; they
+# only need to be right if you publish a release by hand:
 #   curl -sL <url> | shasum -a 256
 class Microtunnel < Formula
   desc "Hub-and-spoke layer 3 overlay VPN over TUN and UDP"

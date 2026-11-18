@@ -60,6 +60,38 @@ jobs:
 
             ${{ env.NOTES }}
 
+  # Points the Homebrew formula in github.com/<owner>/homebrew-tap at this release's source
+  # tarball. Needs a repository secret HOMEBREW_TAP_TOKEN: a token with write access to the
+  # contents of the tap repository. Without it the job does nothing, and the formula's url
+  # and sha256 have to be updated by hand.
+  update-homebrew:
+    needs: create-release
+    runs-on: ubuntu-latest
+    env:
+      TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+      TAG: ${{ github.ref_name }}
+      TAP_REPO: ${{ github.repository_owner }}/homebrew-tap
+    steps:
+      - name: Skip (no HOMEBREW_TAP_TOKEN)
+        if: env.TAP_TOKEN == ''
+        run: echo "::notice::HOMEBREW_TAP_TOKEN is not set; the Homebrew formula was not updated."
+
+      - name: Update the Homebrew formula
+        if: env.TAP_TOKEN != ''
+        run: |
+          set -euo pipefail
+          URL="https://github.com/${GITHUB_REPOSITORY}/archive/refs/tags/${TAG}.tar.gz"
+          SHA=$(curl -fsSL "$URL" | sha256sum | cut -d' ' -f1)
+          echo "url=$URL sha256=$SHA"
+          git clone "https://x-access-token:${TAP_TOKEN}@github.com/${TAP_REPO}.git" tap
+          cd tap
+          sed -i -E "s|^(  url \").*(\")\$|\1${URL}\2|; s|^(  sha256 \").*(\")\$|\1${SHA}\2|" Formula/microtunnel.rb
+          if git diff --quiet; then echo "formula already up to date"; exit 0; fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -am "microtunnel ${TAG}"
+          git push
+
   # The binary is a static Go executable (CGO_ENABLED=0): it has no glibc,
   # OpenSSL or libyaml dependency, so — unlike the original C build — there is
   # no need to compile inside a pinned old-distro container for compatibility,
