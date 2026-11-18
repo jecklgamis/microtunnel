@@ -1,8 +1,3 @@
----
-title: Docker demo
-layout: default
----
-
 # Docker demo: ports, Envoy and environment
 
 Details for the local demo described in the [README](https://github.com/jecklgamis/microtunnel#running-with-docker): a relay and two peers in containers on one machine.

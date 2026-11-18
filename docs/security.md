@@ -1,8 +1,3 @@
----
-title: Security
-layout: default
----
-
 # Security
 
 microtunnel is a small, from-scratch implementation of WireGuard-style ideas. It has **not** been independently audited; see [Security review](#security-review).

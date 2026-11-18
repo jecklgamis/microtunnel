@@ -1,8 +1,3 @@
----
-title: microtunnel
-layout: default
----
-
 # microtunnel
 
 A simple Linux hub-and-spoke layer 3 overlay network using a TUN virtual interface over UDP.

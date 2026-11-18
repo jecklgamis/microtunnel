@@ -54,6 +54,7 @@ jobs:
         id: create
         uses: softprops/action-gh-release@v3
         with:
+          prerelease: ${{ contains(github.ref_name, '-') }}
           body: |
             ## ${{ env.TITLE || 'Changes' }}
 
