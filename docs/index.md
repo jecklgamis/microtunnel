@@ -4,7 +4,7 @@ A simple Linux hub-and-spoke layer 3 overlay network using a TUN virtual interfa
 
 ```
                     ┌─────────────────────────┐
-                    │  relay (public IP)       │
+                    │  relay (reachable)     │
                     │  overlay: 10.9.0.1       │
                     │  UDP :5040               │
                     └────────────┬────────────┘
@@ -17,7 +17,7 @@ A simple Linux hub-and-spoke layer 3 overlay network using a TUN virtual interfa
 └──────────────────────┘              └──────────────────────┘
 ```
 
-Peers behind NAT connect outbound to a relay with a public IP. All peer-to-peer traffic transits through the relay.
+Peers behind NAT connect outbound to a relay that all peers can reach. All peer-to-peer traffic transits through the relay.
 
 See also: [Security](security) (handshake, wire format, review notes). For a local demo in containers see the [Docker demo](docker).
 
@@ -150,7 +150,7 @@ To add peers to a running relay without editing its YAML, see [Adding Peers With
 
 ### Relay
 
-The relay has a public IP and accepts inbound connections from peers. It does not have an `endpoint` set — it never initiates outbound connections.
+The relay has an address every peer can reach (a public IP, or a LAN or port-forwarded address) and accepts inbound connections from peers. It does not have an `endpoint` set — it never initiates outbound connections.
 
 Edit `/etc/microtunnel/microtunnel.yaml`:
 
@@ -209,7 +209,7 @@ peers:
       - 10.9.0.0/24
 ```
 
-- `endpoint` — the relay's public hostname or IP and UDP port. Required on peers; omit on the relay.
+- `endpoint` — the relay's reachable hostname or IP and UDP port. Required on peers; omit on the relay.
 - `allowed_ips` — peers use `/24` (the full overlay subnet) so all overlay traffic is routed through the relay.
 - `pre_shared_key` — must match the relay and all other peers.
 - All timing fields are optional; values shown are the defaults.
@@ -306,7 +306,7 @@ microtunnel keygen laptop -dir /etc/microtunnel
 # public key: 3f9a...
 ```
 
-**2. On the relay**, register it. `-subnet` is the overlay network the address is allocated from (the relay itself is the first address, `10.9.0.1`), and `-endpoint` is the relay's public address, which goes into the config printed for the new peer:
+**2. On the relay**, register it. `-subnet` is the overlay network the address is allocated from (the relay itself is the first address, `10.9.0.1`), and `-endpoint` is the relay's reachable address, which goes into the config printed for the new peer:
 
 ```bash
 sudo microtunnel peer add laptop \

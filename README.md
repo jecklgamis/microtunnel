@@ -9,13 +9,13 @@ Minimal WireGuard-inspired overlay network: TUN + UDP + X25519/AES-GCM, with a r
 > [!WARNING]
 > **Alpha software.** microtunnel is in an early alpha state: the configuration format, CLI and wire protocol may still change. Don't rely on it to protect sensitive traffic or for production workloads. See [Limitations](#limitations) and [docs/security.md](docs/security.md).
 
-A small, self-hosted **hub-and-spoke layer 3 VPN** for Linux and macOS. Machines behind NAT dial out to a relay with a public IP, and microtunnel gives them all addresses on one private network (`10.9.0.0/24`) over encrypted UDP. One static Go binary, one YAML file, no kernel module and no control-plane service.
+A small, self-hosted **hub-and-spoke layer 3 VPN** for Linux and macOS. Machines behind NAT dial out to a relay with a reachable address, and microtunnel gives them all addresses on one private network (`10.9.0.0/24`) over encrypted UDP. One static Go binary, one YAML file, no kernel module and no control-plane service.
 
 Inspired by [WireGuard](https://www.wireguard.com/): X25519 key exchange, identity hiding, AllowedIPs routing and automatic rekeying, reimplemented from scratch in Go. It is a port of the original C implementation (`lanecove-tunnel`) and uses the same wire protocol and configuration format.
 
 ```
                         ┌─────────────────────────┐
-                        │  relay (public IP)       │
+                        │  relay (reachable)     │
                         │  overlay: 10.9.0.1       │
                         │  UDP :5040               │
                         └────────────┬────────────┘
@@ -77,7 +77,7 @@ Details on the protocol and its review are in [docs/security.md](docs/security.m
 
 ## Common Use Cases
 
-- **Connecting peers behind NAT** — machines that can't reach each other directly (home networks, cloud VMs, mobile) communicate through a relay with a public IP.
+- **Connecting peers behind NAT** — machines that can't reach each other directly (home networks, cloud VMs, mobile) communicate through a relay they can all reach.
 - **Secure service access** — a peer runs a service (a web server, a database) reachable only over the overlay IP, keeping it off the public internet.
 - **Multi-site connectivity** — link servers across cloud providers or regions through a single relay, without cloud VPN products.
 - **Development and testing** — expose a local dev machine's services to a remote peer (a CI runner, a colleague) without port forwarding.
@@ -98,7 +98,7 @@ sudo apt install iproute2 make   # plus Go 1.26+ from https://go.dev/dl/
 
 Install the package, then configure each machine with `microtunnel init`. This walkthrough sets up one relay and one peer. A peer is any machine behind NAT that dials out to the relay; the same program is both, and the config decides the role.
 
-You need a relay with a public address (below it is `relay.example.com`) and UDP 5040 open to it. Replace `relay.example.com` with your own host or IP.
+You need a relay that every peer can reach (a public server, or any host on your LAN or private network; below it is `relay.example.com`) with UDP 5040 open to it. Replace `relay.example.com` with your own host or IP.
 
 ### Linux (deb package)
 

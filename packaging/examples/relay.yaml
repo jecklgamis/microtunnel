@@ -22,7 +22,7 @@ peers_dir: /etc/microtunnel/peers.d
 # Local admin API (unix socket, root only): `microtunnel peer ...` uses it automatically, and it
 # reports live peer state. The relay service creates /run/microtunnel for it.
 admin_socket: /run/microtunnel/admin.sock
-# Optional: your relay's public address, put into the configs generated for new peers.
+# Optional: your relay's reachable address, put into the configs generated for new peers.
 #public_endpoint: <relay-host-or-ip>:5040
 
 # Peers can also be listed here instead of (or as well as) in peers_dir:

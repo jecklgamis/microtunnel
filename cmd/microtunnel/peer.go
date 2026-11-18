@@ -40,7 +40,7 @@ peer add:
   -key-dir <dir>     where -generate writes <name>.key, .crt and .yaml (default .)
   -ip <addr>         fixed overlay IP (default: the lowest free address)
   -subnet <cidr>     overlay subnet (default: the relay's tunnel_address network)
-  -endpoint <h:p>    the relay's public host:port for the peer's config
+  -endpoint <h:p>    the relay's reachable host:port for the peer's config
                      (default: the relay's public_endpoint)
 `
 

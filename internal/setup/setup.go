@@ -83,7 +83,7 @@ type RelayOptions struct {
 	Name        string // names the files <name>.key/.yaml (default DefaultName)
 	Address     string // the relay's overlay address with prefix (default 10.9.0.1/24)
 	Port        int    // UDP port (default 5040)
-	Endpoint    string // public host:port, written as public_endpoint and used in the peer hint
+	Endpoint    string // reachable host:port, written as public_endpoint and used in the peer hint
 	AdminSocket string // default AdminSocketFor(Name); NoAdminSocket disables
 	Force       bool   // overwrite an existing relay.yaml (a new pre-shared key is generated)
 }
@@ -107,7 +107,7 @@ type RelayResult struct {
 type PeerOptions struct {
 	Dir      string // config directory (default DefaultDir)
 	Name     string // names the files: <name>.key, <name>.crt, <name>.yaml (default DefaultName)
-	Relay    string // the relay's public host:port
+	Relay    string // the relay's reachable host:port
 	RelayKey string // the relay's public key (hex)
 	PSK      string // the relay's pre-shared key
 	Address  string // this peer's overlay address with prefix, if the admin has assigned one

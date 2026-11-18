@@ -92,7 +92,7 @@ type Config struct {
 	// created with mode 0600, so only the owning user (and root) can use it.
 	// A relative path is resolved against the config file's directory by Load.
 	AdminSocket string
-	// PublicEndpoint is this node's public host:port as peers should dial it.
+	// PublicEndpoint is this node's reachable host:port as peers should dial it.
 	// It is handed to newly registered peers (the admin API and `peer add`).
 	PublicEndpoint string
 }

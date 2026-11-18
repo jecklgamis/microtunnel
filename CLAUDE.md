@@ -23,11 +23,11 @@ Go module `github.com/jecklgamis/microtunnel` (Go 1.26+). Only dependencies: `go
 ### Topology
 ```
 peer-1 (10.9.0.2) ──┐
-                     ├── UDP 5040 ── relay (10.9.0.1, public IP)
+                     ├── UDP 5040 ── relay (10.9.0.1, reachable)
 peer-2 (10.9.0.3) ──┘
 ```
 
-- **relay** — public IP, inbound-only, routes traffic between peers
+- **relay** — reachable by every peer (public IP, LAN or port-forwarded; no hole punching), inbound-only, routes traffic between peers
 - **peer-1 / peer-2** — behind NAT, connect outbound to relay
 
 ### Key Provisioning

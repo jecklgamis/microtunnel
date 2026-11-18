@@ -24,7 +24,7 @@ init relay:
   -dir <dir>            config directory (default /etc/microtunnel)
   -name <name>          names the files <name>.key/.yaml (default "microtunnel": the config the
                         'microtunnel' service runs; another name runs as microtunnel@<name>)
-  -endpoint <host:port> the relay's public address; handed to peers and shown in the peer hint
+  -endpoint <host:port> the relay's reachable address; handed to peers and shown in the peer hint
   -address <ip/len>     the relay's overlay address (default 10.9.0.1/24)
   -port <n>             UDP port (default 5040)
   -admin-socket <path>  admin API socket (default /run/microtunnel/admin.sock, /var/run/... on macOS; "none" turns it off)
@@ -35,7 +35,7 @@ init peer:
   -dir <dir>            config directory (default /etc/microtunnel)
   -name <name>          names the files <name>.key/.yaml (default "microtunnel": the config the
                         'microtunnel' service runs; another name runs as microtunnel@<name>)
-  -relay <host:port>    the relay's public address                      (required)
+  -relay <host:port>    the relay's reachable address                      (required)
   -relay-key <hex>      the relay's public key                          (required)
   -psk <secret>         the relay's pre-shared key; or -psk-file <file>, or the MICROTUNNEL_PSK
                         environment variable, which keep it out of the process list   (required)

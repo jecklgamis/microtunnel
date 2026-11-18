@@ -92,7 +92,7 @@ type RegisterOptions struct {
 	PublicKeyHex string // the peer's own public key
 	IP           string // fixed overlay IP; empty allocates the lowest free one
 	Subnet       string // overlay subnet; default: the relay's tunnel_address network
-	Endpoint     string // relay's public host:port; default: public_endpoint, else a placeholder
+	Endpoint     string // relay's reachable host:port; default: public_endpoint, else a placeholder
 }
 
 // Registration is everything a newly registered peer needs to join.
