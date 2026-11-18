@@ -1,24 +1,21 @@
-# Homebrew formula for microtunnel. Homebrew looks for formulae in a tap, so to use
-# this copy it into a tap repository as Formula/microtunnel.rb, for example
-# github.com/jecklgamis/homebrew-tap, then:
+# Homebrew formula for microtunnel. Homebrew looks for formulae in a tap: this file is
+# published as Formula/microtunnel.rb in github.com/jecklgamis/homebrew-tap, then:
 #
 #   brew tap jecklgamis/tap
+#   brew install microtunnel                 # the latest release
 #   brew install --HEAD microtunnel          # builds the main branch
-#   brew install microtunnel                 # once a release tag exists (see below)
 #
 # It builds from source, so nothing needs signing or notarizing.
+#
+# To publish a new release: set url to the new tag's tarball and sha256 to
+#   curl -sL <url> | shasum -a 256
 class Microtunnel < Formula
   desc "Hub-and-spoke layer 3 overlay VPN over TUN and UDP"
   homepage "https://github.com/jecklgamis/microtunnel"
-  license "MIT"
+  url "https://github.com/jecklgamis/microtunnel/archive/refs/tags/v1.0.0-alpha.1.tar.gz"
+  sha256 "cbb5b0e8d21a3d764ed50b78e4599cc65f8d15ed7d71fef337b1df44726d2420"
+  license "Apache-2.0"
   head "https://github.com/jecklgamis/microtunnel.git", branch: "main"
-
-  # For each release, uncomment this and fill in the tag and the tarball's checksum
-  # (`curl -sL <url> | shasum -a 256`). Homebrew cannot download a tarball from a
-  # private repository, so this works once the repository is public.
-  #
-  # url "https://github.com/jecklgamis/microtunnel/archive/refs/tags/v1.0.0.tar.gz"
-  # sha256 "<sha256 of the tarball>"
 
   depends_on "go" => :build
 
