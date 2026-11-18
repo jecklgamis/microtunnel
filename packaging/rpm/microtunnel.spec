@@ -2,7 +2,7 @@ Name:           microtunnel
 Version:        %{pkg_version}
 Release:        %{pkg_release}%{?dist}
 Summary:        Hub-and-spoke layer 3 overlay network over UDP
-License:        MIT
+License:        Apache-2.0
 URL:            https://github.com/jecklgamis/microtunnel
 
 Requires:       iproute
