@@ -52,7 +52,7 @@ Stop it with Ctrl+C, then `docker compose down`. For real machines, see [Running
 **Simple to run**
 - **One static binary** — pure Go, no OpenSSL, libyaml or libc requirements; `linux` and `macOS`, `amd64` and `arm64`.
 - **One-command setup** — `microtunnel init relay` and `init peer` generate keys and write a complete, validated config; `keygen` makes a key pair on its own.
-- **Packages for every platform** — `.deb`, `.rpm`, a universal macOS `.pkg` (launchd job included), a Homebrew formula (`packaging/homebrew`), and a multi-arch Docker image (`jecklgamis/microtunnel`).
+- **Packages for every platform** — `.deb`, `.rpm`, a universal macOS `.pkg` (launchd job included), a Homebrew tap (`brew install jecklgamis/tap/microtunnel`), and a multi-arch Docker image (`jecklgamis/microtunnel`).
 - **Real services** — systemd units (`microtunnel` and `microtunnel@<name>` for several tunnels on one machine) and a launchd job that starts only while a config exists.
 - **Configures the interface for you** — set `tunnel_address` and the binary assigns the overlay address and adds the routes (Linux and macOS).
 
@@ -156,7 +156,7 @@ Running a relay and several peers as native processes on **one** host does not w
 
 A Mac is an ordinary peer; the relay side is the same as above. macOS has no `systemctl` and creates the tunnel as a `utun` device, which needs root, so you run microtunnel in the foreground with `sudo`.
 
-**1. Install.** Easiest is the installer package: download `microtunnel-<version>-universal.pkg` (Apple silicon and Intel) from the [releases page](https://github.com/jecklgamis/microtunnel/releases) and open it. It isn't signed yet, so macOS will block a double-click: right-click the file and choose Open (or run `sudo installer -pkg microtunnel-<version>-universal.pkg -target /`). It installs `/usr/local/bin/microtunnel`, a launchd job, `/etc/microtunnel/peers.d` and `/usr/local/share/microtunnel/uninstall.sh`, and starts nothing. Or build from source (Go 1.26+, `brew install go`):
+**1. Install.** Easiest is the installer package: download `microtunnel-<version>-universal.pkg` (Apple silicon and Intel) from the [releases page](https://github.com/jecklgamis/microtunnel/releases) and open it. It isn't signed yet, so macOS will block a double-click: right-click the file and choose Open (or run `sudo installer -pkg microtunnel-<version>-universal.pkg -target /`). It installs `/usr/local/bin/microtunnel`, a launchd job, `/etc/microtunnel/peers.d` and `/usr/local/share/microtunnel/uninstall.sh`, and starts nothing. Or use Homebrew, which builds from source: `brew install jecklgamis/tap/microtunnel`. Or build it yourself (Go 1.26+, `brew install go`):
 
 ```bash
 git clone git@github.com:jecklgamis/microtunnel.git && cd microtunnel

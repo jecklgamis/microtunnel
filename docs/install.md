@@ -12,7 +12,7 @@ Each release provides, for both **amd64/x86_64** and **arm64/aarch64**:
 | `microtunnel-<version>-universal.pkg` | macOS installer (Apple silicon and Intel), see [macOS](#macos). Unsigned for now |
 | `microtunnel-darwin-arm64`, `microtunnel-darwin-amd64` | macOS binary (Apple silicon / Intel). Unsigned: run `xattr -d com.apple.quarantine <file>` after downloading |
 
-A multi-architecture Docker image (linux/amd64 and linux/arm64) is published as `jecklgamis/microtunnel`.
+A multi-architecture Docker image (linux/amd64 and linux/arm64) is published as `jecklgamis/microtunnel`, and macOS users can use [Homebrew](#homebrew).
 
 ## Debian / Ubuntu
 
@@ -25,6 +25,19 @@ sudo dpkg -i microtunnel_<version>_amd64.deb
 ```bash
 sudo rpm -i microtunnel-<version>-1.x86_64.rpm
 ```
+
+Both packages install:
+
+| Path | Description |
+|------|-------------|
+| `/usr/bin/microtunnel` | The tunnel binary |
+| `/usr/bin/microtunnel-create-tunnel.sh` | TUN interface setup helper (only needed if your config has no `tunnel_address`) |
+| `/usr/share/microtunnel/examples/relay.yaml`, `peer.yaml` | Annotated sample configs (`microtunnel init` writes a finished one for you) |
+| `/lib/systemd/system/microtunnel.service` | The service: runs `/etc/microtunnel/microtunnel.yaml` (a relay or a peer: the config decides) |
+| `/lib/systemd/system/microtunnel@.service` | Template for extra instances: `microtunnel@home` runs `/etc/microtunnel/home.yaml` |
+| `/etc/microtunnel/peers.d/` | Empty directory for the relay's peer files |
+
+The package installs **no config and no keys**: run `microtunnel init` (see [Quick Start](quick-start.md)).
 
 ## macOS
 
@@ -41,23 +54,18 @@ Nothing is started and no config or keys are installed. Configure with `sudo mic
 
 Uninstall: `sudo /usr/local/share/microtunnel/uninstall.sh` (`--purge` also deletes `/etc/microtunnel`).
 
-**Homebrew:** `packaging/homebrew/microtunnel.rb` is a formula that builds from source (copy it into a tap as `Formula/microtunnel.rb`). After `brew install`, run `sudo microtunnel init ...` as above and use `sudo brew services start microtunnel` instead of `launchctl`.
 
-Both packages install:
+## Homebrew
 
-| Path | Description |
-|------|-------------|
-| `/usr/bin/microtunnel` | The tunnel binary |
-| `/usr/bin/microtunnel-create-tunnel.sh` | TUN interface setup helper (only needed if your config has no `tunnel_address`) |
-| `/usr/share/microtunnel/examples/relay.yaml`, `peer.yaml` | Annotated sample configs (`microtunnel init` writes a finished one for you) |
-| `/lib/systemd/system/microtunnel.service` | The service: runs `/etc/microtunnel/microtunnel.yaml` (a relay or a peer: the config decides) |
-| `/lib/systemd/system/microtunnel@.service` | Template for extra instances: `microtunnel@home` runs `/etc/microtunnel/home.yaml` |
-| `/etc/microtunnel/peers.d/` | Empty directory for the relay's peer files |
+On macOS, Homebrew can install it from the [jecklgamis/tap](https://github.com/jecklgamis/homebrew-tap) tap. It builds from source, so Go is pulled in as a build dependency and there is no Gatekeeper prompt:
 
-The package installs **no config and no keys**: run `microtunnel init` (see [Quick Start](quick-start.md)).
+```bash
+brew install jecklgamis/tap/microtunnel
+```
 
----
+This installs `microtunnel` into Homebrew's `bin` and the sample configs into its `share/microtunnel/examples`. Nothing is started and no config or keys are created. Run `sudo microtunnel init ...` as in [Quick Start](quick-start.md), then either run `sudo microtunnel` in the foreground or use `sudo brew services start microtunnel` instead of `launchctl`. The service runs `/etc/microtunnel/microtunnel.yaml`, so `init` has to have written it first. Logs are in `$(brew --prefix)/var/log/microtunnel.log`.
 
+`brew install --HEAD jecklgamis/tap/microtunnel` builds the `main` branch instead of the latest release. To remove it: `brew uninstall microtunnel`.
 
 ## Uninstalling
 
