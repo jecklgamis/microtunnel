@@ -1,5 +1,7 @@
 ## microtunnel
 
+Minimal WireGuard-inspired overlay network: TUN + UDP + X25519/AES-GCM, with a relay for peers behind NAT.
+
 [![build](https://github.com/jecklgamis/microtunnel/actions/workflows/build.yaml/badge.svg)](https://github.com/jecklgamis/microtunnel/actions/workflows/build.yaml)
 
 📖 [User Guide](https://jecklgamis.github.io/microtunnel/)
