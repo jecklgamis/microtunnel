@@ -233,7 +233,7 @@ microtunnel peer remove laptop                  # cut off immediately
 
 **Enrollment.** For many devices, run `microtunnel enroll serve` next to the relay (HTTPS required), create a token with `microtunnel enroll token create -name laptop -ttl 1h`, and the new machine runs `microtunnel join https://enroll.example.com -token <token>`. Tokens are single use, expire (1 hour by default, 7 days at most) and are stored only as hashes.
 
-See [Dynamic Peers](docs/index.md#adding-peers-without-a-restart), the [Admin Socket](docs/index.md#admin-socket) and [Enrollment](docs/index.md#self-service-enrollment) for the full reference, including what a reload changes and the enrollment security properties. To also reach a network *behind* a peer, see [Routing a network behind a peer](docs/index.md#routing-a-network-behind-a-peer).
+See [Dynamic Peers](docs/dynamic-peers.md), the [Admin Socket](docs/admin-socket.md) and [Enrollment](docs/enrollment.md) for the full reference, including what a reload changes and the enrollment security properties. To also reach a network *behind* a peer, see [Routing a network behind a peer](docs/configuration.md#routing-a-network-behind-a-peer).
 
 ## Running With Docker
 
@@ -270,7 +270,7 @@ curl http://localhost:15052                 # peer-1's Envoy HTTP proxy -> tunne
 - **UDP transport** — no packet ordering guarantees; packet loss is not retransmitted
 - **Single-process** — worker goroutines parallelize packet crypto across cores, but it is still one process per interface (one config, one TUN device) with no multi-host failover
 - **Hub-and-spoke only** — peer-to-peer traffic always goes through the relay; there are no direct connections or NAT traversal between peers
-- **Routes are static** — `tunnel_routes` are applied once at startup, and `allowed_ips` never create kernel routes, so a network behind a peer needs both (see [Routing a network behind a peer](docs/index.md#routing-a-network-behind-a-peer))
+- **Routes are static** — `tunnel_routes` are applied once at startup, and `allowed_ips` never create kernel routes, so a network behind a peer needs both (see [Routing a network behind a peer](docs/configuration.md#routing-a-network-behind-a-peer))
 - **Alpha** — expect breaking changes; not hardened for production use
 
 ## Development
